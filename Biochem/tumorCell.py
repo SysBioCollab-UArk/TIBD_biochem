@@ -2,6 +2,7 @@ from pysb import *
 from pysb.simulator import *
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 Model()
 
@@ -258,7 +259,7 @@ for obs in model.observables:
     plt.yticks(fontsize=20)
 #     plt.legend(loc=0, fontsize=24)
     plt.tight_layout(pad=3)
-    plt.savefig('/Users/lopezlab/temp/TGFB_ITGB3/TEMP/%s.pdf' % obs.name, format='pdf')
+    plt.savefig(os.path.join('TEMP', '%s.pdf' % obs.name), format='pdf')
 
 
 plt.show()
