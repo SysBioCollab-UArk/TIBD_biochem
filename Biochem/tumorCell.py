@@ -10,7 +10,7 @@ Monomer('TGFB', ['r'])
 Monomer('TGFBRII', ['l', 'smad', 'avb3'])
 Monomer('gITGB3')
 Monomer('mITGB3')
-Monomer('aVb3', ['tgfbrii'])
+Monomer('aVb3', ['tgfbrii', 'cileng'])
 Monomer('SMAD', ['tgfbrii', 'state'], {'state': ['U', 'P', 'SIS3']})
 Monomer('RhoA', ['state'], {'state': ['I', 'A']})
 Monomer('ROCK', ['state'], {'state': ['I', 'A']})
@@ -26,7 +26,7 @@ Monomer('PTHrP')
 Initial(TGFB(r=None), Parameter('TGFB_init', 100))
 Initial(TGFBRII(l=None, smad=None, avb3=None), Parameter('TGFBRII_init', 1000))
 Initial(gITGB3(), Parameter('gITGB3_init', 1))
-Initial(aVb3(tgfbrii=None), Parameter('aVb3_init', 10))
+Initial(aVb3(tgfbrii=None, cileng=None), Parameter('aVb3_init', 10))
 Initial(SMAD(tgfbrii=None, state='U'), Parameter('SMAD_init', 100))
 Initial(RhoA(state='I'), Parameter('RhoA_init', 100))
 Initial(ROCK(state='I'), Parameter('ROCK_init', 100))
@@ -38,15 +38,19 @@ Initial(gPTHrP(), Parameter('gPTHrP_init', 1))
 # Observable('TGFB_tot', TGFB())
 # Observable('TGFBRII_TGFB', TGFBRII(l=1) % TGFB(r=1))
 # Observable('TGFBRII_aVb3', TGFBRII(avb3=1) % aVb3(tgfbrii=1))
-Observable('SMAD_p', SMAD(tgfbrii=None, state='P'))
-Observable('RhoA_a', RhoA(state='A'))
+Observable('SMAD_p', SMAD(tgfbrii=None, state='P'))  # ***
+# Observable('RhoA_a', RhoA(state='A'))  # ***
 # # Observable('ROCK_a', ROCK(state='A'))
 # # Observable('MEK_p', MEK(state='P'))
-Observable('p38MAPK_p', p38MAPK(state='P'))
-# Observable('aVb3_tot', aVb3())
+Observable('p38MAPK_p', p38MAPK(state='P'))  # ***
+Observable('aVb3_tot', aVb3())
 # # Observable('Gli2_tot', Gli2())
 Observable('Gli2_free', Gli2(gant58=None))
-# Observable('PTHrP_tot', PTHrP())
+Observable('PTHrP_tot', PTHrP())
+
+# TGFB production (as cells grow, they produce their own TGFB)
+Parameter('k_tgfb_prod', 0)
+Rule('TGFB_production', None >> TGFB(r=None), k_tgfb_prod)
 
 # TGFB->SMAD pathway
 Parameter('kf_tgfbrii_lig_bind', 10)
@@ -79,10 +83,10 @@ Parameter('kact_p38mapk', 1e-2)
 Parameter('kdeact_p38mapk', 10)
 Rule('TGFBRII_aVb3_bind', TGFBRII(avb3=None) + aVb3(tgfbrii=None) | TGFBRII(avb3=1) % aVb3(tgfbrii=1),
      kf_tgfbrii_avb3_bind, kr_tgfbrii_avb3_bind)
-Rule('RhoA_basal_activation', aVb3(tgfbrii=None) + RhoA(state='I') >> aVb3(tgfbrii=None) + RhoA(state='A'),
-     kact_basal_rhoa)
-Rule('RhoA_induced_activation', aVb3(tgfbrii=ANY) + RhoA(state='I') >> aVb3(tgfbrii=ANY) + RhoA(state='A'),
-     kact_induced_rhoa)
+Rule('RhoA_basal_activation', aVb3(tgfbrii=None, cileng=None) + RhoA(state='I') >> aVb3(tgfbrii=None, cileng=None) +
+     RhoA(state='A'), kact_basal_rhoa)
+Rule('RhoA_induced_activation', aVb3(tgfbrii=ANY, cileng=None) + RhoA(state='I') >> aVb3(tgfbrii=ANY, cileng=None) +
+     RhoA(state='A'), kact_induced_rhoa)
 Rule('RhoA_deactivation', RhoA(state='A') >> RhoA(state='I'), kdeact_rhoa)
 Rule('ROCK_activation', RhoA(state='A') + ROCK(state='I') >> RhoA(state='A') + ROCK(state='A'), kact_rock)
 Rule('ROCK_deactivation', ROCK(state='A') >> ROCK(state='I'), kdeact_rock)
@@ -113,7 +117,7 @@ Parameter('kdeg_mITGB3', 1)
 Parameter('kdeg_avb3', 1)
 Rule('ITGB3_transcription_basal', gITGB3() >> gITGB3() + mITGB3(), ktr_itgb3_basal)
 Rule('ITGB3_transcription', gITGB3() >> gITGB3() + mITGB3(), ktr_itgb3_gli2)
-Rule('ITGB3_translation', mITGB3() >> mITGB3() + aVb3(tgfbrii=None), ktl_itgb3)
+Rule('ITGB3_translation', mITGB3() >> mITGB3() + aVb3(tgfbrii=None, cileng=None), ktl_itgb3)
 Rule('mITGB3_degradation', mITGB3() >> None, kdeg_mITGB3)
 Rule('aVb3_degradation', aVb3(tgfbrii=None) >> None, kdeg_avb3)
 
@@ -129,9 +133,12 @@ Rule('PTHrP_translation', mPTHrP() >> mPTHrP() + PTHrP(), ktl_pthrp)
 Rule('mPTHrP_degradation', mPTHrP() >> None, kdeg_mPTHrP)
 Rule('pPTHrP_degradation', PTHrP() >> None, kdeg_pPTHrP)
 
+# PERTURBATIONS ########
+
 # TGFB flush
 Parameter('k_tgfb_flush', 0)
 Rule('TGFB_flush', TGFB(r=None) >> None, k_tgfb_flush)
+
 ########################
 
 # 1D11 binds TGFb
@@ -142,6 +149,7 @@ Parameter('kf_1d11_tgfb_bind', 1000)
 Parameter('kr_1d11_tgfb_bind', 10)
 Rule('x1D11_binds_TGFB', TGFB(r=None) + x1D11(tgfb=None) | TGFB(r=1) % x1D11(tgfb=1), kf_1d11_tgfb_bind,
      kr_1d11_tgfb_bind)
+
 ###########################
 
 # GANT58 binds Gli2
@@ -152,6 +160,7 @@ Parameter('kf_gant58_gli2_bind', 1000)
 Parameter('kr_gant58_gli2_bind', 10)
 Rule('GANT58_binds_Gli2', GANT58(gli2=None) + Gli2(gant58=None) | GANT58(gli2=1) % Gli2(gant58=1), kf_gant58_gli2_bind,
      kr_gant58_gli2_bind)
+
 #############################
 
 # SMAD~U + SIS3 -> SMAD~SIS3 + SIS3
@@ -162,6 +171,7 @@ Parameter('kf_smad_sis3', 1)
 Parameter('kr_smad_sis3', 100)
 Rule('SMAD_U_to_SMAD_SIS3', SMAD(state='U') + SIS3() >> SMAD(state='SIS3') + SIS3(), kf_smad_sis3)
 Rule('SMAD_SIS3_to_SMAD_U', SMAD(state='SIS3') >> SMAD(state='U'), kr_smad_sis3)
+
 #############################
 
 # p38MAPK~U + SB202190 -> p38MAPK~SB202190 + SB202190
@@ -173,6 +183,17 @@ Parameter('kr_p38mapk_sb202190', 100)
 Rule('p38MAPK_U_to_p38MAPK_SB202190', p38MAPK(state='U') + SB202190() >> p38MAPK(state='SB202190') + SB202190(),
      kf_p38mapk_sb202190)
 Rule('p38MAPK_SB202190_to_p38MAPK_U', p38MAPK(state='SB202190') >> p38MAPK(state='U'), kr_p38mapk_sb202190)
+
+#############################
+
+# Cilengitide inhibits RhoA activation on aVb3
+Monomer('Cilengitide', ['avb3'])
+Initial(Cilengitide(avb3=None), Parameter('Cileng_init', 0))
+Parameter('kf_avb3_cileng_bind', 1)
+Parameter('kr_avb3_cileng_bind', 10)
+Rule('cileng_binds_aVb3', aVb3(cileng=None) + Cilengitide(avb3=None) | aVb3(cileng=1) % Cilengitide(avb3=1),
+     kf_avb3_cileng_bind, kr_avb3_cileng_bind)
+
 #############################
 
 # EQUILIBRATE WITH MECHANICAL FORCES
@@ -219,23 +240,26 @@ x = sim.run(tspan=tspan1)  # , param_values = {'kf_tgfbrii_avb3_bind' : 0})
 
 for obs in model.observables:
     plt.figure(obs.name)
-    plt.plot(tspan1, x.observables[obs.name], lw=5)  # , label=obs.name)
-plt.ylim(ymin=-50, ymax=1250)
-plt.xlim(xmax=85)
+    plt.plot(tspan1, x.observables[obs.name], lw=5, label=obs.name)
 
 # save final concentrations
 initials = x.species[-1]
 
 # PERTURBATIONS
-REMOVE_MECH_FORCES = True
+REMOVE_MECH_FORCES = False  # True
 FLUSH_TGFB = False
 ADD_1D11 = False
 ADD_GANT58 = False
+ADD_SIS3 = False
+ADD_SB202190 = False
+ADD_CILENGITIDE = True
 
 tspan2 = np.append(np.linspace(0, 1, 101), np.linspace(1.1, 40, 130))
+color = None
 
 # REMOVE MECHANICAL FORCES
 if REMOVE_MECH_FORCES:
+    color = 'r'
     x = sim.run(tspan=tspan2, initials=initials,
                 param_values={'kf_tgfbrii_avb3_bind': 0})
     #                            'kact_basal_rhoa' : 0.1*kact_basal_rhoa.value})
@@ -243,18 +267,20 @@ if REMOVE_MECH_FORCES:
     #  kact_p38mapk
     for obs in model.observables:
         plt.figure(obs.name)
-        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], '-r', lw=5)  # mfc='None', mec='r')
+        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)  # mfc='None', mec='r')
 
 # FLUSH TGFB
 if FLUSH_TGFB:
+    color = 'g'
     x = sim.run(tspan=tspan2, initials=initials,
                 param_values={'k_tgfb_flush': 1e12})
     for obs in model.observables:
         plt.figure(obs.name)
-        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], '-g', lw=5)  # mfc='None', mec='g')
+        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)  # mfc='None', mec='g')
     
 # ADD 1D11 ANTIBODY
 if ADD_1D11:
+    color = 'c'
     initials2 = np.array([i for i in initials])
     idx = [str(sp) for sp in model.species].index('x1D11(tgfb=None)')
     initials2[idx] = 100
@@ -265,10 +291,11 @@ if ADD_1D11:
                                   'kr_1d11_tgfb_bind': 10})
         for obs in model.observables:
             plt.figure(obs.name)
-            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], 'c', ls=ls[i], lw=5)  # mfc='None', mec='c')
+            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)  # mfc='None', mec='c')
     
 # ADD GANT58
 if ADD_GANT58:
+    color = 'm'
     initials3 = np.array([i for i in initials])
     idx = [str(sp) for sp in model.species].index('GANT58(gli2=None)')
     ls = ['-', '--', '-.', ':']
@@ -277,19 +304,60 @@ if ADD_GANT58:
         x = sim.run(tspan=tspan2, initials=initials3)
         for obs in model.observables:
             plt.figure(obs.name)
-            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], 'm', ls=ls[i], lw=5)  # mfc='None', mec='m')
+            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)  # mfc='None', mec='m')
+
+# ADD SIS3
+if ADD_SIS3:
+    color = 'orange'
+    initials4 = np.array([i for i in initials])
+    idx = [str(sp) for sp in model.species].index('SIS3()')
+    conc = [1000, 100, 10]
+    linestyle = ['-', '--', '-.']
+    for sis3, ls in zip(conc, linestyle):
+        initials4[idx] = sis3
+        x = sim.run(tspan=tspan2, initials=initials4)
+        for obs in model.observables:
+            plt.figure(obs.name)
+            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
+
+# ADD SB202190
+if ADD_SB202190:
+    color = 'brown'
+    initials5 = np.array([i for i in initials])
+    idx = [str(sp) for sp in model.species].index('SB202190()')
+    conc = [1000, 100, 10]
+    linestyle = ['-', '--', '-.']
+    for sb, ls in zip(conc, linestyle):
+        initials5[idx] = sb
+        x = sim.run(tspan=tspan2, initials=initials5)
+        for obs in model.observables:
+            plt.figure(obs.name)
+            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
+
+# ADD CILENGITIDE
+if ADD_CILENGITIDE:
+    color = 'purple'
+    initials6 = np.array([i for i in initials])
+    idx = [str(sp) for sp in model.species].index('Cilengitide(avb3=None)')
+    conc = [1e5, 5e4, 1e4]
+    linestyle = ['-', '--', '-.']
+    for cileng, ls in zip(conc, linestyle):
+        initials6[idx] = cileng
+        x = sim.run(tspan=tspan2, initials=initials6)
+        for obs in model.observables:
+            plt.figure(obs.name)
+            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
 
 # Finish plot
 for obs in model.observables:
     plt.figure(obs.name)
 #     plt.title(obs.name, fontsize=24)
     plt.xlabel('time', fontsize=20)
-    plt.ylabel('population', fontsize=20)
+    plt.ylabel(obs.name, fontsize=20)
     plt.xticks(fontsize=20)
     plt.yticks(fontsize=20)
-#     plt.legend(loc=0, fontsize=24)
+    # plt.legend(loc=0, fontsize=18)
     plt.tight_layout(pad=3)
     plt.savefig(os.path.join('plots', '%s.pdf' % obs.name), format='pdf')
-
 
 plt.show()

@@ -49,6 +49,7 @@ for target, marker in zip(np.unique([d['Target'] for d in raw_data if d['Drug'] 
     # plt.plot(np.log10(xdata), ydata/ydata[0], 'o', lw=3, label=target)
     # plt.errorbar(np.log10(stiffness), mRNA_avg/mRNA_avg[0], mRNA_se, ls='-', marker=marker, ms=10, capsize=10, lw=3, label=target)
     plt.errorbar(np.log10(stiffness), mRNA_avg, mRNA_se, ls='-', marker=marker, ms=10, capsize=10, lw=3, label=target)
+    plt.xlim(left=0)
     plt.xlabel(r'log$_{10}$ stiffness (kPa)', fontsize=20)
     plt.ylabel('mRNA', fontsize=20)
     plt.xticks(fontsize=20)
@@ -94,6 +95,7 @@ for drug in drugs[drugs != 'Force']:
             # plt.plot(xdata, ydata_avg, 'o-', lw=3, ms=10, label='%d %s' % (dose, units))
             plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3,
                          label='%d' % dose)
+            plt.xlim(left=0)
             plt.xlabel('time (h)', fontsize=20)
             plt.ylabel('%s mRNA' % target, fontsize=20)
             plt.xticks(fontsize=20)
