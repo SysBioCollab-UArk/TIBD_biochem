@@ -238,6 +238,8 @@ x = sim.run(tspan=tspan1)  # , param_values = {'kf_tgfbrii_avb3_bind' : 0})
 #     print i,sp
 # quit()
 
+# SIMULATIONS
+
 for obs in model.observables:
     plt.figure(obs.name)
     plt.plot(tspan1, x.observables[obs.name], lw=5, label=obs.name)
