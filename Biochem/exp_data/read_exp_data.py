@@ -64,7 +64,7 @@ for target, marker in zip(np.unique([d['Target'] for d in raw_data if d['Drug'] 
 # Other drugs
 for drug in drugs[drugs != 'Force']:
     for target in np.unique([d['Target'] for d in raw_data if d['Drug'] == drug]):
-        plt.figure()
+        plt.figure('%s: %s' % (drug, target))
         print('%s: %s' % (drug, target))
         # plt.title('drug: %s, target: %s' % (drug, target))
         doses = np.unique([d['Dose'] for d in raw_data if d['Drug'] == drug and d['Target'] == target])
@@ -93,8 +93,7 @@ for drug in drugs[drugs != 'Force']:
             # plots
             # plt.plot(xdata, ydata_avg/ydata_avg[0], 'o-', lw=3, ms=10, label='%d %s' % (dose, units))
             # plt.plot(xdata, ydata_avg, 'o-', lw=3, ms=10, label='%d %s' % (dose, units))
-            plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3,
-                         label='%d' % dose)
+            plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3, label='%d' % dose)
             plt.xlim(left=0)
             plt.xlabel('time (h)', fontsize=20)
             plt.ylabel('%s mRNA' % target, fontsize=20)
@@ -108,5 +107,25 @@ for drug in drugs[drugs != 'Force']:
                        title='%s (%s)' % (drugs_map.get(drug, drug), units), title_fontsize=16)
             plt.tight_layout()
             # plt.savefig()
+
+            #####
+            if target in ['Gli2', 'PTHrP'] and dose == 0:
+                plt.figure(target)
+                plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3,
+                             label='%s' % drugs_map.get(drug, drug))
+                plt.xlim(left=0)
+                plt.xlabel('time (h)', fontsize=20)
+                plt.ylabel('%s mRNA (control)' % target, fontsize=20)
+                plt.xticks(fontsize=20)
+                plt.yticks(fontsize=20)
+                plt.legend()
+                # Remove error bars from legend
+                handles, labels = plt.gca().get_legend_handles_labels()
+                handles = [h[0] if isinstance(h, container.ErrorbarContainer) else h for h in handles]
+                plt.legend(handles, labels, loc=0, ncol=ncol, columnspacing=1, fontsize=16)
+                plt.tight_layout()
+                # switch back to original plot
+                plt.figure('%s: %s' % (drug, target))
+            #####
 
 plt.show()
