@@ -19,21 +19,14 @@ drugs_map = {'AVB3InhibitorCilengitide': 'Cilengitide',
              'p38MAPKInhibitorSB202190': 'SB202190',
              'SMAD3InhibitorSIS3': 'SIS3'}
 
-# for drug in drugs:
-#     print(drugs_map.get(drug, drug))
-# quit()
-
 # Force
 force_dict = {}
 markers = ['o', '^', 's']
 for target, marker in zip(np.unique([d['Target'] for d in raw_data if d['Drug'] == 'Force']), markers):
-    # plt.figure()
+    plt.figure('stiffness')
     xdata = [d['Dose'] for d in raw_data if d['Drug'] == 'Force' and d['Target'] == target]
     ydata = np.array([d['Count'] for d in raw_data if d['Drug'] == 'Force' and d['Target'] == target])
-    # print(xdata)
-    # print(ydata)
     stiffness, counts = np.unique(xdata, return_counts=True)
-    # print(stiffness, counts)
     start_idx = 0
     mRNA_avg = []
     mRNA_se = []
@@ -46,8 +39,6 @@ for target, marker in zip(np.unique([d['Target'] for d in raw_data if d['Drug'] 
         mRNA_se.append(np.std(amount, ddof=1) / np.sqrt(counts[i]))
 
     # plots
-    # plt.plot(np.log10(xdata), ydata/ydata[0], 'o', lw=3, label=target)
-    # plt.errorbar(np.log10(stiffness), mRNA_avg/mRNA_avg[0], mRNA_se, ls='-', marker=marker, ms=10, capsize=10, lw=3, label=target)
     plt.errorbar(np.log10(stiffness), mRNA_avg, mRNA_se, ls='-', marker=marker, ms=10, capsize=10, lw=3, label=target)
     plt.xlim(left=0)
     plt.xlabel(r'log$_{10}$ stiffness (kPa)', fontsize=20)
@@ -66,11 +57,9 @@ for drug in drugs[drugs != 'Force']:
     for target in np.unique([d['Target'] for d in raw_data if d['Drug'] == drug]):
         plt.figure('%s: %s' % (drug, target))
         print('%s: %s' % (drug, target))
-        # plt.title('drug: %s, target: %s' % (drug, target))
         doses = np.unique([d['Dose'] for d in raw_data if d['Drug'] == drug and d['Target'] == target])
         ncol = 2 if len(doses) > 3 else 1
         for dose in doses:
-            # print('dose: %g' % dose)
             xy_data = [(d['Hours'], d['Count'], d['Units']) for d in raw_data if d['Drug'] == drug
                        and d['Target'] == target and d['Dose'] == dose]
             xdata = [xy_data[i][0] for i in range(len(xy_data))]
@@ -80,7 +69,7 @@ for drug in drugs[drugs != 'Force']:
                 print('Error: Please ensure that units for all doses are the same (%s, %s)' % (drug, target))
             else:
                 units = re.sub(r'^u', r'$\\mu$', units[0])
-            xdata, counts = np.unique(xdata, return_counts=True)
+            xdata, counts = np.unique(xdata, return_counts=True)  # time
             ydata_avg = []
             ydata_se = []
             start = 0
@@ -91,8 +80,6 @@ for drug in drugs[drugs != 'Force']:
             ydata_avg = np.array(ydata_avg)
 
             # plots
-            # plt.plot(xdata, ydata_avg/ydata_avg[0], 'o-', lw=3, ms=10, label='%d %s' % (dose, units))
-            # plt.plot(xdata, ydata_avg, 'o-', lw=3, ms=10, label='%d %s' % (dose, units))
             plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3, label='%d' % dose)
             plt.xlim(left=0)
             plt.xlabel('time (h)', fontsize=20)
@@ -113,7 +100,7 @@ for drug in drugs[drugs != 'Force']:
                 plt.figure(target)
                 plt.errorbar(xdata, ydata_avg, ydata_se, ls='-', marker='o', ms=10, capsize=10, lw=3,
                              label='%s' % drugs_map.get(drug, drug))
-                plt.xlim(left=0)
+                plt.xlim(left=0, right=80)  ###
                 plt.xlabel('time (h)', fontsize=20)
                 plt.ylabel('%s mRNA (control)' % target, fontsize=20)
                 plt.xticks(fontsize=20)
