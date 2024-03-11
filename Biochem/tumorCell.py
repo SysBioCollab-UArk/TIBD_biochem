@@ -133,233 +133,231 @@ Rule('PTHrP_translation', mPTHrP() >> mPTHrP() + PTHrP(), ktl_pthrp)
 Rule('mPTHrP_degradation', mPTHrP() >> None, kdeg_mPTHrP)
 Rule('pPTHrP_degradation', PTHrP() >> None, kdeg_pPTHrP)
 
-# PERTURBATIONS ########
+if __name__ == '__main__':
 
-# TGFB flush
-Parameter('k_tgfb_flush', 0)
-Rule('TGFB_flush', TGFB(r=None) >> None, k_tgfb_flush)
+    # PERTURBATIONS ########
 
-########################
+    # TGFB flush
+    Parameter('k_tgfb_flush', 0)
+    Rule('TGFB_flush', TGFB(r=None) >> None, k_tgfb_flush)
 
-# 1D11 binds TGFb
-Monomer('x1D11', ['tgfb'])
-Initial(x1D11(tgfb=None), Parameter('x1D11_init', 0))
-# Observable('x1D11_TGFB', TGFB(r=1) % x1D11(tgfb=1))
-Parameter('kf_1d11_tgfb_bind', 1000)
-Parameter('kr_1d11_tgfb_bind', 10)
-Rule('x1D11_binds_TGFB', TGFB(r=None) + x1D11(tgfb=None) | TGFB(r=1) % x1D11(tgfb=1), kf_1d11_tgfb_bind,
-     kr_1d11_tgfb_bind)
+    ########################
 
-###########################
+    # 1D11 binds TGFb
+    Monomer('x1D11', ['tgfb'])
+    Initial(x1D11(tgfb=None), Parameter('x1D11_init', 0))
+    # Observable('x1D11_TGFB', TGFB(r=1) % x1D11(tgfb=1))
+    Parameter('kf_1d11_tgfb_bind', 1000)
+    Parameter('kr_1d11_tgfb_bind', 10)
+    Rule('x1D11_binds_TGFB', TGFB(r=None) + x1D11(tgfb=None) | TGFB(r=1) % x1D11(tgfb=1), kf_1d11_tgfb_bind,
+         kr_1d11_tgfb_bind)
 
-# GANT58 binds Gli2
-Monomer('GANT58', ['gli2'])
-Initial(GANT58(gli2=None), Parameter('GANT58_init', 0))
-# Observable('GANT58_Gli2', GANT58(gli2=1) % Gli2(gant58=1))
-Parameter('kf_gant58_gli2_bind', 1000)
-Parameter('kr_gant58_gli2_bind', 10)
-Rule('GANT58_binds_Gli2', GANT58(gli2=None) + Gli2(gant58=None) | GANT58(gli2=1) % Gli2(gant58=1), kf_gant58_gli2_bind,
-     kr_gant58_gli2_bind)
+    ###########################
 
-#############################
+    # GANT58 binds Gli2
+    Monomer('GANT58', ['gli2'])
+    Initial(GANT58(gli2=None), Parameter('GANT58_init', 0))
+    # Observable('GANT58_Gli2', GANT58(gli2=1) % Gli2(gant58=1))
+    Parameter('kf_gant58_gli2_bind', 1000)
+    Parameter('kr_gant58_gli2_bind', 10)
+    Rule('GANT58_binds_Gli2', GANT58(gli2=None) + Gli2(gant58=None) | GANT58(gli2=1) % Gli2(gant58=1),
+         kf_gant58_gli2_bind, kr_gant58_gli2_bind)
 
-# SMAD~U + SIS3 -> SMAD~SIS3 + SIS3
-# SMAD~SIS3 -> SMAD~U
-Monomer('SIS3')
-Initial(SIS3(), Parameter('SIS3_init', 0))
-Parameter('kf_smad_sis3', 1)
-Parameter('kr_smad_sis3', 100)
-Rule('SMAD_U_to_SMAD_SIS3', SMAD(state='U') + SIS3() >> SMAD(state='SIS3') + SIS3(), kf_smad_sis3)
-Rule('SMAD_SIS3_to_SMAD_U', SMAD(state='SIS3') >> SMAD(state='U'), kr_smad_sis3)
+    #############################
 
-#############################
+    # SMAD~U + SIS3 -> SMAD~SIS3 + SIS3
+    # SMAD~SIS3 -> SMAD~U
+    Monomer('SIS3')
+    Initial(SIS3(), Parameter('SIS3_init', 0))
+    Parameter('kf_smad_sis3', 1)
+    Parameter('kr_smad_sis3', 100)
+    Rule('SMAD_U_to_SMAD_SIS3', SMAD(state='U') + SIS3() >> SMAD(state='SIS3') + SIS3(), kf_smad_sis3)
+    Rule('SMAD_SIS3_to_SMAD_U', SMAD(state='SIS3') >> SMAD(state='U'), kr_smad_sis3)
 
-# p38MAPK~U + SB202190 -> p38MAPK~SB202190 + SB202190
-# SMAD~SB202190 -> SMAD~U
-Monomer('SB202190')
-Initial(SB202190(), Parameter('SB202190_init', 0))
-Parameter('kf_p38mapk_sb202190', 1)
-Parameter('kr_p38mapk_sb202190', 100)
-Rule('p38MAPK_U_to_p38MAPK_SB202190', p38MAPK(state='U') + SB202190() >> p38MAPK(state='SB202190') + SB202190(),
-     kf_p38mapk_sb202190)
-Rule('p38MAPK_SB202190_to_p38MAPK_U', p38MAPK(state='SB202190') >> p38MAPK(state='U'), kr_p38mapk_sb202190)
+    #############################
 
-#############################
+    # p38MAPK~U + SB202190 -> p38MAPK~SB202190 + SB202190
+    # SMAD~SB202190 -> SMAD~U
+    Monomer('SB202190')
+    Initial(SB202190(), Parameter('SB202190_init', 0))
+    Parameter('kf_p38mapk_sb202190', 1)
+    Parameter('kr_p38mapk_sb202190', 100)
+    Rule('p38MAPK_U_to_p38MAPK_SB202190', p38MAPK(state='U') + SB202190() >> p38MAPK(state='SB202190') + SB202190(),
+         kf_p38mapk_sb202190)
+    Rule('p38MAPK_SB202190_to_p38MAPK_U', p38MAPK(state='SB202190') >> p38MAPK(state='U'), kr_p38mapk_sb202190)
 
-# Cilengitide inhibits RhoA activation on aVb3
-Monomer('Cilengitide', ['avb3'])
-Initial(Cilengitide(avb3=None), Parameter('Cileng_init', 0))
-Parameter('kf_avb3_cileng_bind', 1)
-Parameter('kr_avb3_cileng_bind', 10)
-Rule('cileng_binds_aVb3', aVb3(cileng=None) + Cilengitide(avb3=None) | aVb3(cileng=1) % Cilengitide(avb3=1),
-     kf_avb3_cileng_bind, kr_avb3_cileng_bind)
+    #############################
 
-#############################
+    # Cilengitide inhibits RhoA activation on aVb3
+    Monomer('Cilengitide', ['avb3'])
+    Initial(Cilengitide(avb3=None), Parameter('Cileng_init', 0))
+    Parameter('kf_avb3_cileng_bind', 1)
+    Parameter('kr_avb3_cileng_bind', 10)
+    Rule('cileng_binds_aVb3', aVb3(cileng=None) + Cilengitide(avb3=None) | aVb3(cileng=1) % Cilengitide(avb3=1),
+         kf_avb3_cileng_bind, kr_avb3_cileng_bind)
 
-# EQUILIBRATE WITH MECHANICAL FORCES
-tspan1 = np.linspace(0, 40, 401)
-sim = ScipyOdeSimulator(model, verbose=True)
-x = sim.run(tspan=tspan1)  # , param_values = {'kf_tgfbrii_avb3_bind' : 0})
+    #############################
 
-# BIFURCATION
-# tspan_equil = np.linspace(0,1000,10001)
-# KD = np.append(np.arange(1e2, 5e3+1, 100), np.arange(1e4, 1e6+1e4, 1e4))
-# plt.figure()
-# for color in ['b', 'r']:
-#     if color == 'b':
-#         x = sim.run(tspan = tspan_equil, param_values= {'kr_tgfbrii_avb3_bind' : 1e2})
-#     else:
-#         x = sim.run(tspan = tspan_equil, param_values= {'kf_tgfbrii_avb3_bind' : 0})
-#     initials = x.species[-1]
-#     gli2_equil = []
-#     for i,kd in enumerate(KD):
-#         print kd
-#         x = sim.run(tspan = tspan_equil, initials=initials, param_values= {'kr_tgfbrii_avb3_bind' : kd})
-#         gli2_equil.append(x.observables['Gli2_free'][-1])
-#         #
-#     #     plt.figure()
-#     #     plt.plot(tspan_equil, x.observables['Gli2_free'], lw=5, label=r'K$_D$ = %g' % kd)
-#     #     plt.legend(loc=0)
-#     
-#     plt.plot(KD, gli2_equil, lw=5, color=color)
-#     
-# plt.xscale('log')
-# plt.xlabel(r'K$_D$', fontsize=20)
-# plt.ylabel(r'[Gli2]$_\mathrm{equil}$', fontsize=20)
-# plt.xticks(fontsize=20)
-# plt.yticks(fontsize=20)
-# plt.tight_layout()
-# 
-# plt.show()
-# quit()
-#####
+    # EQUILIBRATE WITH MECHANICAL FORCES
+    tspan1 = np.linspace(0, 40, 401)
+    sim = ScipyOdeSimulator(model, verbose=True)
+    x = sim.run(tspan=tspan1)  # , param_values = {'kf_tgfbrii_avb3_bind' : 0})
 
-# for i,sp in enumerate(model.species):
-#     print i,sp
-# quit()
+    # BIFURCATION
+    '''
+    tspan_equil = np.linspace(0,1000,10001)
+    KD = np.append(np.arange(1e2, 5e3+1, 100), np.arange(1e4, 1e6+1e4, 1e4))
+    plt.figure()
+    for color in ['b', 'r']:
+        if color == 'b':
+            x = sim.run(tspan = tspan_equil, param_values= {'kr_tgfbrii_avb3_bind' : 1e2})
+        else:
+            x = sim.run(tspan = tspan_equil, param_values= {'kf_tgfbrii_avb3_bind' : 0})
+        initials = x.species[-1]
+        gli2_equil = []
+        for i,kd in enumerate(KD):
+            print kd
+            x = sim.run(tspan = tspan_equil, initials=initials, param_values= {'kr_tgfbrii_avb3_bind' : kd})
+            gli2_equil.append(x.observables['Gli2_free'][-1])
+            #
+        #     plt.figure()
+        #     plt.plot(tspan_equil, x.observables['Gli2_free'], lw=5, label=r'K$_D$ = %g' % kd)
+        #     plt.legend(loc=0)
 
-# SIMULATIONS
+        plt.plot(KD, gli2_equil, lw=5, color=color)
 
-for obs in model.observables:
-    plt.figure(obs.name)
-    plt.plot(tspan1, x.observables[obs.name], lw=5, label=obs.name)
-
-# save final concentrations
-initials = x.species[-1]
-
-# PERTURBATIONS
-REMOVE_MECH_FORCES = False  # True
-FLUSH_TGFB = False
-ADD_1D11 = False
-ADD_GANT58 = False
-ADD_SIS3 = False
-ADD_SB202190 = False
-ADD_CILENGITIDE = True
-
-tspan2 = np.append(np.linspace(0, 1, 101), np.linspace(1.1, 40, 130))
-color = None
-
-# REMOVE MECHANICAL FORCES
-if REMOVE_MECH_FORCES:
-    color = 'r'
-    x = sim.run(tspan=tspan2, initials=initials,
-                param_values={'kf_tgfbrii_avb3_bind': 0})
-    #                            'kact_basal_rhoa' : 0.1*kact_basal_rhoa.value})
-    #                            'kact_rock' : 0.5*kact_rock.value})
-    #  kact_p38mapk
-    for obs in model.observables:
-        plt.figure(obs.name)
-        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)  # mfc='None', mec='r')
-
-# FLUSH TGFB
-if FLUSH_TGFB:
-    color = 'g'
-    x = sim.run(tspan=tspan2, initials=initials,
-                param_values={'k_tgfb_flush': 1e12})
-    for obs in model.observables:
-        plt.figure(obs.name)
-        plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)  # mfc='None', mec='g')
-    
-# ADD 1D11 ANTIBODY
-if ADD_1D11:
-    color = 'c'
-    initials2 = np.array([i for i in initials])
-    idx = [str(sp) for sp in model.species].index('x1D11(tgfb=None)')
-    initials2[idx] = 100
-    ls = ['-', '--', '--', '--']
-    for i, Kd in enumerate([0.001, 0.01, 0.1, 1]):
-        x = sim.run(tspan=tspan2, initials=initials2,
-                    param_values={'kf_1d11_tgfb_bind': 10/Kd,
-                                  'kr_1d11_tgfb_bind': 10})
-        for obs in model.observables:
-            plt.figure(obs.name)
-            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)  # mfc='None', mec='c')
-    
-# ADD GANT58
-if ADD_GANT58:
-    color = 'm'
-    initials3 = np.array([i for i in initials])
-    idx = [str(sp) for sp in model.species].index('GANT58(gli2=None)')
-    ls = ['-', '--', '-.', ':']
-    for i, g58 in enumerate([1e5, 1e4]):
-        initials3[idx] = g58
-        x = sim.run(tspan=tspan2, initials=initials3)
-        for obs in model.observables:
-            plt.figure(obs.name)
-            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)  # mfc='None', mec='m')
-
-# ADD SIS3
-if ADD_SIS3:
-    color = 'orange'
-    initials4 = np.array([i for i in initials])
-    idx = [str(sp) for sp in model.species].index('SIS3()')
-    conc = [1000, 100, 10]
-    linestyle = ['-', '--', '-.']
-    for sis3, ls in zip(conc, linestyle):
-        initials4[idx] = sis3
-        x = sim.run(tspan=tspan2, initials=initials4)
-        for obs in model.observables:
-            plt.figure(obs.name)
-            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
-
-# ADD SB202190
-if ADD_SB202190:
-    color = 'brown'
-    initials5 = np.array([i for i in initials])
-    idx = [str(sp) for sp in model.species].index('SB202190()')
-    conc = [1000, 100, 10]
-    linestyle = ['-', '--', '-.']
-    for sb, ls in zip(conc, linestyle):
-        initials5[idx] = sb
-        x = sim.run(tspan=tspan2, initials=initials5)
-        for obs in model.observables:
-            plt.figure(obs.name)
-            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
-
-# ADD CILENGITIDE
-if ADD_CILENGITIDE:
-    color = 'purple'
-    initials6 = np.array([i for i in initials])
-    idx = [str(sp) for sp in model.species].index('Cilengitide(avb3=None)')
-    conc = [1e5, 5e4, 1e4]
-    linestyle = ['-', '--', '-.']
-    for cileng, ls in zip(conc, linestyle):
-        initials6[idx] = cileng
-        x = sim.run(tspan=tspan2, initials=initials6)
-        for obs in model.observables:
-            plt.figure(obs.name)
-            plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)  # mfc='None', mec='m')
-
-# Finish plot
-for obs in model.observables:
-    plt.figure(obs.name)
-#     plt.title(obs.name, fontsize=24)
-    plt.xlabel('time', fontsize=20)
-    plt.ylabel(obs.name, fontsize=20)
+    plt.xscale('log')
+    plt.xlabel(r'K$_D$', fontsize=20)
+    plt.ylabel(r'[Gli2]$_\mathrm{equil}$', fontsize=20)
     plt.xticks(fontsize=20)
     plt.yticks(fontsize=20)
-    # plt.legend(loc=0, fontsize=18)
-    plt.tight_layout(pad=3)
-    plt.savefig(os.path.join('plots', '%s.pdf' % obs.name), format='pdf')
+    plt.tight_layout()
 
-plt.show()
+    plt.show()
+    '''
+
+    # SIMULATIONS
+
+    for obs in model.observables:
+        plt.figure(obs.name)
+        plt.plot(tspan1, x.observables[obs.name], lw=5, label=obs.name)
+
+    # save final concentrations
+    initials = x.species[-1]
+
+    # PERTURBATIONS
+    REMOVE_MECH_FORCES = False
+    FLUSH_TGFB = False
+    ADD_1D11 = False
+    ADD_GANT58 = True
+    ADD_SIS3 = False
+    ADD_SB202190 = False
+    ADD_CILENGITIDE = False
+
+    tspan2 = np.append(np.linspace(0, 1, 101), np.linspace(1.1, 40, 130))
+    color = None
+
+    # REMOVE MECHANICAL FORCES
+    if REMOVE_MECH_FORCES:
+        color = 'r'
+        x = sim.run(tspan=tspan2, initials=initials,
+                    param_values={'kf_tgfbrii_avb3_bind': 0})
+        #                            'kact_basal_rhoa' : 0.1*kact_basal_rhoa.value})
+        #                            'kact_rock' : 0.5*kact_rock.value})
+        #  kact_p38mapk
+        for obs in model.observables:
+            plt.figure(obs.name)
+            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)
+
+    # FLUSH TGFB
+    if FLUSH_TGFB:
+        color = 'g'
+        x = sim.run(tspan=tspan2, initials=initials,
+                    param_values={'k_tgfb_flush': 1e12})
+        for obs in model.observables:
+            plt.figure(obs.name)
+            plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls='-', lw=5)
+
+    # ADD 1D11 ANTIBODY
+    if ADD_1D11:
+        color = 'c'
+        initials2 = np.array([i for i in initials])
+        idx = [str(sp) for sp in model.species].index('x1D11(tgfb=None)')
+        initials2[idx] = 100
+        ls = ['-', '--', '--', '--']
+        for i, Kd in enumerate([0.001, 0.01, 0.1, 1]):
+            x = sim.run(tspan=tspan2, initials=initials2,
+                        param_values={'kf_1d11_tgfb_bind': 10/Kd,
+                                      'kr_1d11_tgfb_bind': 10})
+            for obs in model.observables:
+                plt.figure(obs.name)
+                plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)
+
+    # ADD GANT58
+    if ADD_GANT58:
+        color = 'm'
+        initials3 = np.array([i for i in initials])
+        idx = [str(sp) for sp in model.species].index('GANT58(gli2=None)')
+        ls = ['-', '--', '-.', ':']
+        for i, g58 in enumerate([1e5, 1e4]):
+            initials3[idx] = g58
+            x = sim.run(tspan=tspan2, initials=initials3)
+            for obs in model.observables:
+                plt.figure(obs.name)
+                plt.plot(tspan1[-1]+tspan2, x.observables[obs.name], color=color, ls=ls[i], lw=5)
+
+    # ADD SIS3
+    if ADD_SIS3:
+        color = 'orange'
+        initials4 = np.array([i for i in initials])
+        idx = [str(sp) for sp in model.species].index('SIS3()')
+        conc = [1000, 100, 10]
+        linestyle = ['-', '--', '-.']
+        for sis3, ls in zip(conc, linestyle):
+            initials4[idx] = sis3
+            x = sim.run(tspan=tspan2, initials=initials4)
+            for obs in model.observables:
+                plt.figure(obs.name)
+                plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)
+
+    # ADD SB202190
+    if ADD_SB202190:
+        color = 'brown'
+        initials5 = np.array([i for i in initials])
+        idx = [str(sp) for sp in model.species].index('SB202190()')
+        conc = [1000, 100, 10]
+        linestyle = ['-', '--', '-.']
+        for sb, ls in zip(conc, linestyle):
+            initials5[idx] = sb
+            x = sim.run(tspan=tspan2, initials=initials5)
+            for obs in model.observables:
+                plt.figure(obs.name)
+                plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)
+
+    # ADD CILENGITIDE
+    if ADD_CILENGITIDE:
+        color = 'purple'
+        initials6 = np.array([i for i in initials])
+        idx = [str(sp) for sp in model.species].index('Cilengitide(avb3=None)')
+        conc = [1e5, 5e4, 1e4]
+        linestyle = ['-', '--', '-.']
+        for cileng, ls in zip(conc, linestyle):
+            initials6[idx] = cileng
+            x = sim.run(tspan=tspan2, initials=initials6)
+            for obs in model.observables:
+                plt.figure(obs.name)
+                plt.plot(tspan1[-1] + tspan2, x.observables[obs.name], color=color, ls=ls, lw=5)
+
+    # Finish plot
+    for obs in model.observables:
+        plt.figure(obs.name)
+    #     plt.title(obs.name, fontsize=24)
+        plt.xlabel('time', fontsize=20)
+        plt.ylabel(obs.name, fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        # plt.legend(loc=0, fontsize=18)
+        plt.tight_layout()
+        plt.savefig(os.path.join('plots', '%s.pdf' % obs.name), format='pdf')
+
+    plt.show()
