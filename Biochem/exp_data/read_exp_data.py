@@ -19,6 +19,87 @@ drugs_map = {'AVB3InhibitorCilengitide': 'Cilengitide',
              'p38MAPKInhibitorSB202190': 'SB202190',
              'SMAD3InhibitorSIS3': 'SIS3'}
 
+
+def get_drug_target_dose_data(drug, target, dose):
+    print('%s: %s (dose = %g)' % (drug, target, dose))
+    xy_data = [(d['Hours'], d['Count'], d['Units']) for d in raw_data
+               if d['Drug'] == drug and d['Target'] == target and d['Dose'] == dose]
+    xdata = [xy_data[i][0] for i in range(len(xy_data))]
+    ydata = [xy_data[i][1] for i in range(len(xy_data))]
+    xdata, counts = np.unique(xdata, return_counts=True)  # time
+    ydata_avg = []
+    ydata_se = []
+    start = 0
+    for n in range(len(counts)):
+        ydata_avg.append(np.mean(ydata[start:start + counts[n]]))
+        ydata_se.append(np.std(ydata[start:start + counts[n]], ddof=1) / np.sqrt(counts[n]))
+        start += counts[n]
+    ydata_avg = np.array(ydata_avg)
+    ydata_se = np.array(ydata_se)
+
+    return xdata, ydata_avg, ydata_se
+
+##########
+'''
+import csv
+
+drugs = ['TGFbInhibitor1D11', 'TGFbInhibitor1D11']  # , 'AVB3InhibitorCilengitide', 'AVB3InhibitorCilengitide']
+targets = [['PTHrP', 'Gli2'], ['PTHrP', 'Gli2']]  # , ['ITGB3', 'PTHrP', 'Gli2'], ['ITGB3', 'PTHrP', 'Gli2']]
+doses = [0, 10]  # , 0, 20]
+
+# drugs = ['TGFbInhibitor1D11', 'TGFbInhibitor1D11']
+# targets = [['PTHrP'], ['PTHrP']]
+# doses = [0, 10]
+
+drug_dict = {'TGFbInhibitor1D11': 'x1D11',
+             'AVB3InhibitorCilengitide': 'Cilengitide'}
+
+target_dict = {'PTHrP': 'mPTHrP_Obs',
+               'Gli2': 'mGli2_Obs',
+               'ITGB3': 'mITGB3_Obs'}
+
+# 'TGFbInhibitor1D11', ['PTHrP', 'Gli2'], 0
+# 'TGFbInhibitor1D11', ['PTHrP', 'Gli2'], 10
+# 'AVB3InhibitorCilengitide', ['ITGB3'], 0
+# 'AVB3InhibitorCilengitide', ['ITGB3'], 20
+
+for i, (drug, target, dose) in enumerate(zip(drugs, targets, doses)):
+    print(i)
+    # print('===', drug, target, dose, '===')
+    headers = [target_dict[tgt] for tgt in target]
+    exp_data = np.array([get_drug_target_dose_data(drug, tgt, dose) for tgt in target])
+    exp_time = exp_data[:, 0, :].T
+    exp_mean = exp_data[:, 1, :].T
+    exp_serr = exp_data[:, 2, :].T
+    # print(headers)
+    # print(exp_time)
+    # print(exp_mean)
+    # print(exp_serr)
+    for suffix, data in zip(['time', 'avg', 'se'], [exp_time, exp_mean, exp_serr]):
+        file = open('../tumorCell_exp_data_%s_%d.csv' % (suffix, i), 'w')
+        csvwriter = csv.writer(file)
+        csvwriter.writerow(headers)
+        csvwriter.writerows(data)
+        file.close()
+
+    # plot data for each experiment
+    plt.figure()
+    plt.title('%s: %d %s' % (drug_dict[drug], dose, r'$\mu$g/ml'), fontsize=20)
+    for j, tgt in enumerate(target):
+        plt.errorbar(exp_time[:, j], exp_mean[:, j], exp_serr[:, j], ls='-', marker='o', ms=10, capsize=10, lw=3,
+                     label='%s' % tgt)
+        plt.xlim(left=0)
+        plt.xlabel('time (h)', fontsize=20)
+        plt.ylabel('mRNA', fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        plt.legend(fontsize=16)
+        plt.tight_layout()
+plt.show()
+quit()
+'''
+##########
+
 # Force
 force_dict = {}
 markers = ['o', '^', 's']
@@ -58,6 +139,7 @@ for drug in drugs[drugs != 'Force']:
         plt.figure('%s: %s' % (drug, target))
         print('%s: %s' % (drug, target))
         doses = np.unique([d['Dose'] for d in raw_data if d['Drug'] == drug and d['Target'] == target])
+        # TODO: Get units here
         ncol = 2 if len(doses) > 3 else 1
         for dose in doses:
             xy_data = [(d['Hours'], d['Count'], d['Units']) for d in raw_data if d['Drug'] == drug
