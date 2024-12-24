@@ -266,7 +266,7 @@ def extract_cell_substrate_data(platemap, control):
     return Cq_data
 
 
-def plot_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
+def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
     print()
     dCt = {}  # Delta Ct values
     # loop over (cell line, substrate) pairs
@@ -331,6 +331,36 @@ def plot_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
     print(genes)
     print()
 
+    # Identify and remove outliers using Dixon's Q Test
+    for key in ddCt.keys():
+        print(key)
+        for key2 in ddCt[key].keys():
+            print('  %s:' % key2, ddCt[key][key2])
+            data = [dd for d in ddCt[key][key2] for dd in d]
+            print('    data:', data)
+            print('    2^-data:', 2 ** -np.array(data))
+            print('    2^-mean(data):', 2 ** -np.mean(data))
+            # can only check for outliers if there are at least 3 data points
+            if len(data) >= 3:
+                alpha = 0.05
+                is_outlier, outlier_idx, outlier_value, q_stat, q_critical = \
+                    dixon_q_test(2 ** -np.array(data), alpha=alpha)
+                print(f"Outlier detected: {is_outlier}")
+                print(f"Q Statistic: {q_stat:.3f}, Q Critical: {q_critical:.3f}")
+                print(f"Suspected Outlier Value: {outlier_value}")
+                if is_outlier:
+                    warn(f"Outlier detected: {key} : {key2}\nValue: {outlier_value}\n"
+                         f"Q Statistic: {q_stat:.3f}\nQ Critical: {q_critical:.3f}")
+                    # set outlier value to NaN (None) in the ddCt array
+                    for d in ddCt[key][key2]:
+                        if outlier_idx < len(d):
+                            d[outlier_idx] = None
+                            break
+                        else:
+                            outlier_idx -= len(d)
+                    print('   ', ddCt[key][key2])
+
+    # Plot relative mRNA levels
     if add_subplot is None:
         fig, ax = plt.subplots(constrained_layout=True)
     else:
@@ -351,36 +381,10 @@ def plot_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
             print('  %s:' % key2, ddCt[key][key2])
             j = genes.index(key2)
             print('  j: %d' % j)
-            data = [dd for d in ddCt[key][key2] for dd in d]
+            data = [dd for d in ddCt[key][key2] for dd in d if not np.isnan(dd)]
             print('    data:', data)
             print('    2^-data:', 2 ** -np.array(data))
             print('    2^-mean(data):', 2 ** -np.mean(data))
-            # #######################################
-            # check for outliers using Dixon's Q Test
-            if len(data) >= 3:
-                alpha = 0.05
-                is_outlier, outlier_idx, outlier_value, q_stat, q_critical = \
-                    dixon_q_test(2 ** -np.array(data), alpha=alpha)
-                print(f"Outlier detected: {is_outlier}")
-                print(f"Q Statistic: {q_stat:.3f}, Q Critical: {q_critical:.3f}")
-                print(f"Suspected Outlier Value: {outlier_value}")
-                if is_outlier:
-                    warn(f"Outlier detected: {key} : {key2}\nValue: {outlier_value}\n"
-                         f"Q Statistic: {q_stat:.3f}\nQ Critical: {q_critical:.3f}")
-                    # remove outlier from the flattened data array
-                    data.pop(outlier_idx)
-                    print('    data:', data)
-                    print('    2^-data:', 2 ** -np.array(data))
-                    print('    2^-mean(data):', 2 ** -np.mean(data))
-                    # set outlier value to NaN in the structured ddCt array
-                    for d in ddCt[key][key2]:
-                        if outlier_idx < len(d):
-                            d[outlier_idx] = None
-                            break
-                        else:
-                            outlier_idx -= len(d)
-                    print('   ', ddCt[key][key2])
-            # #######################################
             label = None
             if key2 not in labels:  # need to do this to make sure we get all the gene labels
                 label = key2
@@ -446,9 +450,10 @@ if __name__ == '__main__':
         subs = {'Bone Clone': 'Bone', 'Parental': 'Par', 'Plastic': 'TC', 'LC Aligned': 'AC', 'LC Random': 'RC'}
         for j, group in enumerate(itertools.product(cell_line_groups, substr_groups)):
             Cq_data_subset = dict((key, Cq_data[key]) for key in Cq_data if key[0] in group[0] and key[1] in group[1])
-            ddCt, fig = plot_relative_mRNA(Cq_data_subset, ref_gene='18S', ctrl_sample=ctrl_sample[j],
+            ddCt, fig = calc_relative_mRNA(Cq_data_subset, ref_gene='18S', ctrl_sample=ctrl_sample[j],
                                            add_subplot=(fig, int('%d2%d' % (len(dirnames), 2*i+j+1)), False))
                                          # add_subplot(figure, which figure=(row,col,idx), sharey=True|False)
+
     fig.savefig(os.path.join(basedir, figname), format='pdf')
 
     plt.show()
