@@ -7,7 +7,7 @@ import re
 import itertools
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from warnings import warn
+from warnings import warn, catch_warnings, simplefilter
 
 def dixon_q_test(data, alpha=0.05):
     """
@@ -18,11 +18,12 @@ def dixon_q_test(data, alpha=0.05):
         alpha (float): Significance level (default: 0.05).
 
     Returns:
-        tuple: (is_outlier, q_stat, q_critical, suspected_value)
+        tuple: (is_outlier, outlier_idx, outlier_value, q_stat, q_critical)
             is_outlier (bool): Whether an outlier was detected.
+            outlier_idx (int): Index of the suspected outlier.
+            outlier_value (float): The suspected outlier value.
             q_stat (float): The calculated Q statistic.
             q_critical (float): The critical Q value for the test.
-            suspected_value (float): The suspected outlier value.
     """
     # Predefined critical values for n=3 to n=10
     critical_values = {
@@ -37,12 +38,13 @@ def dixon_q_test(data, alpha=0.05):
     }
 
     # Validate input
-    n = len(data)
-    if n < 3 or n > 10:
-        raise ValueError("Dixon's Q Test is only valid for 3 <= n <= 10.")
+    if len(data) not in critical_values.keys():
+        raise ValueError("Dixon's Q Test is only valid for n = %s. Your n = %d." %
+                         (str(list(critical_values.keys())), len(data)))
 
-    if alpha not in [0.10, 0.05, 0.01]:
-        raise ValueError("Supported alpha levels are 0.10, 0.05, and 0.01.")
+    if alpha not in critical_values[len(data)].keys():
+        raise ValueError("Supported alpha levels are %s. Your alpha = %g." %
+                         (str(list(critical_values[len(data)].keys())), alpha))
 
     # Sort data while keeping track of the original indices
     data_sorted_with_indices = sorted(enumerate(data), key=lambda x: x[1])
@@ -59,28 +61,13 @@ def dixon_q_test(data, alpha=0.05):
     outlier_idx = original_indices[0] if q_stat == q_stat_low else original_indices[-1]
 
     # Get critical Q value
-    q_critical = critical_values[n][alpha]
+    q_critical = critical_values[len(data)][alpha]
 
     # Determine if outlier
     is_outlier = q_stat > q_critical
 
-    print('==========')
-    print('data:', data)
-    print('suspected_value:', outlier_value)
-    print('idx:', outlier_idx)
-    print('==========')
-
     return is_outlier, outlier_idx, outlier_value, q_stat, q_critical
 
-# # Example usage
-# data = [25.1, 24.9, 30.5, 25.3]  # Example dataset
-# alpha = 0.05
-# is_outlier, q_stat, q_critical, suspected_value = dixon_q_test(data, alpha=alpha)
-#
-# print(f"Outlier detected: {is_outlier}")
-# print(f"Q Statistic: {q_stat:.3f}, Q Critical: {q_critical:.3f}")
-# print(f"Suspected Outlier Value: {suspected_value}")
-# quit()
 
 def display_platemap(pmap):
     # get platemap rows
@@ -112,7 +99,7 @@ def read_platemap_data(dirname):
                 line = next(reader)
             cols = [n for n in line]  # column labels (integers)
             line = next(reader)
-            print(line)
+            '''print(line)'''
             while len(line[0]) == 1:  # row label is a letter, e.g., 'A', 'B', etc.
                 row = line[0]
                 for i in range(1, len(line)):
@@ -123,17 +110,16 @@ def read_platemap_data(dirname):
                     line = next(reader)
                 except StopIteration:  # in case we reach the end of the file
                     break
-                print(line)
+                '''print(line)'''
                 for i in range(1, len(line)):
                     well_id = '%s%s' % (row, cols[i] if len(cols[i]) == 2 else '0%s' % cols[i])
                     target = line[i]
-                    print(well_id, target)
                     platemap[pmap_name][well_id][1] = target
                 try:
                     line = next(reader)
                 except StopIteration:  # in case we reach the end of the file
                     break
-                print(line)
+                '''print(line)'''
 
     # STEP 2: Read in the Cq values
     for pmap_name in platemap.keys():
@@ -153,7 +139,6 @@ def read_platemap_data(dirname):
     file_path = os.path.join(dirname, 'cell_culture_samples.xlsx')
     samples_xlsx = pd.read_excel(file_path, header=None)
     samples_csv = samples_xlsx.to_csv(header=False, index=False)
-
     samples_data = np.genfromtxt(StringIO(samples_csv), dtype=None, delimiter=',', names=True, encoding="utf_8_sig")
 
     for pmap_name in platemap.keys():
@@ -164,14 +149,8 @@ def read_platemap_data(dirname):
                 [(cell, substr) for cell, substr in zip(samples_data['CellLine'], samples_data['Substrate'])]
             )
         )
-        # print(samples_dict)
         for well in platemap[pmap_name].keys():
-            print(pmap_name)
-            print(well)
-            print(platemap[pmap_name][well])
             sample = platemap[pmap_name][well][0]
-            print(sample)
-            print('----------')
             if sample != '':  # make sure this is not an empty well
                 cell_line = samples_dict[sample][0]
                 substrate = samples_dict[sample][1]
@@ -194,15 +173,15 @@ def extract_cell_substrate_data(platemap, control):
     targets = np.unique(targets)
     cell_lines = np.unique(cell_lines)
     substrates = np.unique(substrates)
-    print(targets)
+    '''print(targets)
     print(cell_lines)
-    print(substrates)
+    print(substrates)'''
 
     Cq_data = {}  # store qPCR measurements here
 
     # loop over (target, cell line, substrate) groups
     for group in itertools.product(targets, cell_lines, substrates):
-        print(group)
+        '''print(group)'''
         target = group[0]
         cell_line = group[1]
         substrate = group[2]
@@ -218,7 +197,7 @@ def extract_cell_substrate_data(platemap, control):
             # if found values, get the Cq values for the control gene
             if len(samples_Cq) > 0:
                 qpcr_data_temp[target].append(samples_Cq)
-                samples = np.unique([well[0] for well in samples_Cq])
+                samples = np.unique([well[0] for well in samples_Cq]).tolist()
                 qpcr_data_temp[ctrl_key].append([(pmap[well][0], pmap[well][2]) for well in pmap.keys() if
                                                  pmap[well][2] != '' and  # missing data
                                                  pmap[well][0] in samples and pmap[well][1] == control and
@@ -229,24 +208,9 @@ def extract_cell_substrate_data(platemap, control):
         Cq_target = [[] for sample in samples]
         Cq_ctrl = [[] for sample in samples]
         for i in range(len(qpcr_data_temp[target])):
-            print('q_t:', qpcr_data_temp[target][i])
-            print('q_c:', qpcr_data_temp[ctrl_key][i])
-            print(Cq_target)
-            print(Cq_ctrl)
             for j, sample in enumerate(samples):
-                print('j: %d, sample: %d' % (j, sample))
-                print('  %s_t:' % sample, [well[1] for well in qpcr_data_temp[target][i] if well[0] == sample])
-                print('  %s_c:' % sample, [well[1] for well in qpcr_data_temp[ctrl_key][i] if well[0] == sample])
-                print(Cq_target)
-                print(Cq_ctrl)
                 Cq_target[j].append([well[1] for well in qpcr_data_temp[target][i] if well[0] == sample])
                 Cq_ctrl[j].append([well[1] for well in qpcr_data_temp[ctrl_key][i] if well[0] == sample])
-                print(Cq_target)
-                print(Cq_ctrl)
-        for i in range(len(Cq_target)):
-            print('pmap %d' % i)
-            print('  %s:' % target, Cq_target[i])
-            print('  %s:' % ctrl_key, Cq_ctrl[i])
         # if haven't seen this (cell line, substrate) pair before, add it as a key to qpcr_vals dict
         if (cell_line, substrate) not in Cq_data.keys():
             Cq_data[(cell_line, substrate)] = {}
@@ -259,35 +223,32 @@ def extract_cell_substrate_data(platemap, control):
             Cq_data[(cell_line, substrate)][samples[i]][target] = [cq for cq in Cq_target[i] if len(cq) > 0]
             Cq_data[(cell_line, substrate)][samples[i]][ctrl_key] = [cq for cq in Cq_ctrl[i] if len(cq) > 0]
 
-        print((cell_line, substrate))
+        '''print((cell_line, substrate))
         for key in Cq_data[(cell_line, substrate)].keys():
-            print('%s:' % key, Cq_data[(cell_line, substrate)][key])
+            print('%s:' % key, Cq_data[(cell_line, substrate)][key])'''
 
     return Cq_data
 
 
 def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
-    print()
     dCt = {}  # Delta Ct values
     # loop over (cell line, substrate) pairs
     for key in Cq_data.keys():
-        print(key)
-        print(Cq_data[key].keys())
+        '''print('%s:' % str(key), list(Cq_data[key].keys()))'''
         dCt[key] = {}
         # loop over sample numbers
         for key2 in Cq_data[key].keys():
-            print('  %s' % key2)
+            '''print('  %s' % key2)'''
             avg = {}
             targets = []
             # loop over targets + controls
             for key3 in Cq_data[key][key2].keys():
-                print('    %s:' % key3, Cq_data[key][key2][key3], end=' ')
+                '''print('    %s:' % key3, Cq_data[key][key2][key3], end=', ')'''
                 avg[key3] = np.array([np.mean(cq) for cq in Cq_data[key][key2][key3]])
-                print(avg[key3])
+                '''print('avg:', avg[key3])'''
                 # save targets
                 if ref_gene not in key3:
                     targets.append(key3)
-            print(targets)
             # loop over targets
             for target in targets:
                 # if this is the first time we've seen this target, add it to the dct[key] dict
@@ -296,27 +257,9 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
                 # calculate Delta_Ct
                 dCt[key][target].append(list(avg[target] - avg['%s_%s' % (ref_gene, target)]))
 
-    print()
-    for key in dCt.keys():
-        print('%s:' % str(key), dCt[key])
-    print()
-
     genes = []
     ddCt = {}  # Delta Delta Ct values
-    print('dCt[ctrl_sample].keys():', list(dCt[ctrl_sample].keys()))
     for cell_substr in dCt.keys():
-        print('%s:' % str(cell_substr), list(dCt[cell_substr].keys()))
-        #####
-        for gene in dCt[cell_substr].keys():
-            print('  %s:' % gene, dCt[cell_substr][gene])
-            print('  %s' % gene, [np.array(d) for d in dCt[cell_substr][gene]])
-            # print('  %s_ctrl' % gene, dCt[ctrl_sample][gene])
-            print('  %s_ctrl' % gene, np.array([dd for d in dCt[ctrl_sample][gene] for dd in d]))
-            print('  %s_ctrl' % gene, np.mean([dd for d in dCt[ctrl_sample][gene] for dd in d]))
-            print('  diff', [np.array(d) - np.mean([xx for x in dCt[ctrl_sample][gene] for xx in x])
-                             for d in dCt[cell_substr][gene]])
-            print()
-        #####
         ddCt[cell_substr] = dict(
             zip(
                 list(dCt[cell_substr].keys()),
@@ -326,28 +269,17 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
             )
         )
         genes += [gene for gene in dCt[cell_substr].keys() if gene not in genes]
-        print(ddCt[cell_substr])
     genes.sort(key=str.lower)  # case-insensitive sorting
-    print(genes)
-    print()
 
     # Identify and remove outliers using Dixon's Q Test
     for key in ddCt.keys():
-        print(key)
         for key2 in ddCt[key].keys():
-            print('  %s:' % key2, ddCt[key][key2])
             data = [dd for d in ddCt[key][key2] for dd in d]
-            print('    data:', data)
-            print('    2^-data:', 2 ** -np.array(data))
-            print('    2^-mean(data):', 2 ** -np.mean(data))
             # can only check for outliers if there are at least 3 data points
             if len(data) >= 3:
                 alpha = 0.05
                 is_outlier, outlier_idx, outlier_value, q_stat, q_critical = \
                     dixon_q_test(2 ** -np.array(data), alpha=alpha)
-                print(f"Outlier detected: {is_outlier}")
-                print(f"Q Statistic: {q_stat:.3f}, Q Critical: {q_critical:.3f}")
-                print(f"Suspected Outlier Value: {outlier_value}")
                 if is_outlier:
                     warn(f"Outlier detected: {key} : {key2}\nValue: {outlier_value}\n"
                          f"Q Statistic: {q_stat:.3f}\nQ Critical: {q_critical:.3f}")
@@ -358,7 +290,6 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
                             break
                         else:
                             outlier_idx -= len(d)
-                    print('   ', ddCt[key][key2])
 
     # Plot relative mRNA levels
     if add_subplot is None:
@@ -376,15 +307,9 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, add_subplot=None):
     markers = []
     labels = []
     for i, key in enumerate(ddCt.keys()):
-        print(key)
         for key2 in ddCt[key].keys():
-            print('  %s:' % key2, ddCt[key][key2])
             j = genes.index(key2)
-            print('  j: %d' % j)
             data = [dd for d in ddCt[key][key2] for dd in d if not np.isnan(dd)]
-            print('    data:', data)
-            print('    2^-data:', 2 ** -np.array(data))
-            print('    2^-mean(data):', 2 ** -np.mean(data))
             label = None
             if key2 not in labels:  # need to do this to make sure we get all the gene labels
                 label = key2
@@ -427,22 +352,24 @@ if __name__ == '__main__':
 
     for i, dirname in enumerate([os.path.join(basedir, d) for d in dirnames]):
 
+        print('=== %s ===\n' % os.path.split(dirname)[1])
+
         platemap = read_platemap_data(dirname=dirname)
-        for pmap_name in platemap.keys():
-            print('Platemap:', pmap_name)
-            display_platemap(platemap[pmap_name])
-            print()
+        # print platemap to the screen
+        # for pmap_name in platemap.keys():
+        #     print('Platemap:', pmap_name)
+        #     display_platemap(platemap[pmap_name])
+        #     print()
 
         Cq_data = extract_cell_substrate_data(platemap, control='18S')
-
         # print Cq values to the screen
-        for key in Cq_data.keys():
-            print()
-            print(key)
-            for key2 in Cq_data[key].keys():
-                print('   %d:' % key2)
-                for key3 in Cq_data[key][key2].keys():
-                    print('      %s:' % key3, Cq_data[key][key2][key3])
+        # for key in Cq_data.keys():
+        #     print(key)
+        #     for key2 in Cq_data[key].keys():
+        #         print('   %d:' % key2)
+        #         for key3 in Cq_data[key][key2].keys():
+        #             print('      %s:' % key3, Cq_data[key][key2][key3])
+        #     print()
 
         cell_line_groups = [['Bone Clone'], ['Parental']]
         ctrl_sample = [('Bone Clone', 'Plastic'), ('Parental', 'Plastic')]
@@ -453,6 +380,15 @@ if __name__ == '__main__':
             ddCt, fig = calc_relative_mRNA(Cq_data_subset, ref_gene='18S', ctrl_sample=ctrl_sample[j],
                                            add_subplot=(fig, int('%d2%d' % (len(dirnames), 2*i+j+1)), False))
                                          # add_subplot(figure, which figure=(row,col,idx), sharey=True|False)
+            # print ddCt values to the screen
+            # for key in ddCt.keys():
+            #     print(key)
+            #     for key2 in ddCt[key].keys():
+            #         print('  %s:' % key2, ddCt[key][key2])
+            #         data = [dd for d in ddCt[key][key2] for dd in d]
+            #         print('    data:', data)
+            #         print('    2^-data:', 2 ** -np.array(data))
+            #         print('    2^-mean(data):', 2 ** -np.mean(data))
 
     fig.savefig(os.path.join(basedir, figname), format='pdf')
 
