@@ -105,7 +105,7 @@ def read_platemap_data(dirname):
                 row = line[0]
                 for i in range(1, len(line)):
                     well_id = '%s%s' % (row, cols[i] if len(cols[i]) == 2 else '0%s' % cols[i])
-                    sample = line[i] if not line[i].isdigit() else int(line[i])
+                    sample = line[i].strip()  # if not line[i].isdigit() else int(line[i])
                     platemap[pmap_name][well_id] = [sample, '', '', '', '']  # sample, target, Cq, cell_line, substrate
                 try:
                     line = next(reader)
@@ -126,6 +126,7 @@ def read_platemap_data(dirname):
     for pmap_name in platemap.keys():
 
         file_path = os.path.join(dirname, 'RawData', '%s - Quantification Summary.xlsx' % pmap_name)
+        print("Reading '%s'" % os.path.basename(file_path))
         qpcr_data_xlsx = pd.read_excel(file_path, sheet_name=0, header=None)
         qpcr_data_csv = qpcr_data_xlsx.to_csv(header=False, index=False)
 
@@ -139,9 +140,8 @@ def read_platemap_data(dirname):
     # STEP 3: Read in additional information (cell line/substrate or dilution) for each sample
     # '''
     file_path = os.path.join(dirname, 'cell_culture_samples.xlsx')
-    samples_xlsx = pd.read_excel(file_path, header=None)
-    samples_csv = samples_xlsx.to_csv(header=False, index=False)
-    samples_data = np.genfromtxt(StringIO(samples_csv), dtype=None, delimiter=',', names=True, encoding="utf_8_sig")
+    samples_xlsx = pd.read_excel(file_path).astype(str)  #, header=None)
+    samples_data = samples_xlsx.to_records(index=False)
     colnames = samples_data.dtype.names
 
     for pmap_name in platemap.keys():
@@ -212,9 +212,10 @@ def extract_cell_substrate_data(platemap, control=None):
 
         # now consolidate Cq values for the target and control genes based on the sample number
         samples = np.unique([well[0] for q in qpcr_data_temp[target] for well in q])
-        Cq_target = [[] for sample in samples]
+        '''print('samples:', samples)'''
+        Cq_target = [[] for _ in samples]
         if control is not None:
-            Cq_ctrl = [[] for sample in samples]
+            Cq_ctrl = [[] for _ in samples]
         for i in range(len(qpcr_data_temp[target])):
             for j, sample in enumerate(samples):
                 Cq_target[j].append([well[1] for well in qpcr_data_temp[target][i] if well[0] == sample])
@@ -383,10 +384,14 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
     width = 0.75 / len(genes)
     markers = []
     labels = []
+    '''print('Plotting relative mRNA expression')'''
     for i, key in enumerate(ddCt.keys()):
+        '''print(key)'''
         for key2 in ddCt[key].keys():
+            '''print('  ', key2)'''
             j = genes.index(key2)
             data = [dd for d in ddCt[key][key2] for dd in d if not np.isnan(dd)]
+            '''print('    ', 2 ** -np.array(data))'''
             label = None
             if key2 not in labels:  # need to do this to make sure we get all the gene labels
                 label = key2
@@ -506,9 +511,14 @@ def calc_standard_curves(dirname, r2threshold=0.98):
 
 if __name__ == '__main__':
 
+    # basedir = '.'
+    # dirnames = ['TEST']
+    # figname =  'qPCR_relative_mRNA_TEST.pdf'
+
     basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/MAY_AUG_2025' # '.'
-    dirnames = ['BioRep1'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD'] # ['TEST']
-    figname =  'qPCR_relative_mRNA_BioRep1.pdf'
+    dirnames = ['BioRep1', 'BioRep1_OLD'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD']
+    figname = 'qPCR_relative_mRNA_BioRep1.pdf'
+
     fig_rel_mRNA = plt.figure(figsize=(6.4 * 2, 4.8 * len(dirnames)), constrained_layout=True)
 
     for i, dirname in enumerate([os.path.join(basedir, d) for d in dirnames]):
@@ -518,11 +528,11 @@ if __name__ == '__main__':
         # Read platemap info
         platemap = read_platemap_data(dirname=dirname)
         # print platemap to the screen
-        # for pmap_name in platemap.keys():
-        #     print('Platemap:', pmap_name)
-        #     display_platemap(platemap[pmap_name])
-        #     print()
-        # quit()
+        '''for pmap_name in platemap.keys():
+            print('Platemap:', pmap_name)
+            display_platemap(platemap[pmap_name])
+            print()
+        quit()'''
 
         # Get Cq data from platemap
         ctrl_gene = '18S'
@@ -531,15 +541,15 @@ if __name__ == '__main__':
         Cq_data_abs = extract_cell_substrate_data(platemap, control=None)
         '''
         # print Cq values to the screen
-        # Cq_data = Cq_data_abs
-        # for key in Cq_data.keys():
-        #     print(key)
-        #     for key2 in Cq_data[key].keys():
-        #         print('   %s:' % key2)
-        #         for key3 in Cq_data[key][key2].keys():
-        #             print('      %s:' % key3, Cq_data[key][key2][key3])
-        #     print()
-        # quit()
+        '''Cq_data = Cq_data_rel  # Cq_data_abs
+        for key in Cq_data.keys():
+            print(key)
+            for key2 in Cq_data[key].keys():
+                print('   %s:' % key2)
+                for key3 in Cq_data[key][key2].keys():
+                    print('      %s:' % key3, Cq_data[key][key2][key3])
+            print()
+        quit()'''
 
         # Get standard curves
         '''std_curve, fig_sc = calc_standard_curves(dirname, r2threshold=0.88)
@@ -576,7 +586,7 @@ if __name__ == '__main__':
             Cq_data_subset = dict((key, Cq_data_rel[key]) for key in Cq_data_rel
                                   if key[0] in group[0] and key[1] in group[1])
             ddCt, fig_rel_mRNA = \
-                calc_relative_mRNA(Cq_data_subset, ref_gene=ctrl_gene, ctrl_sample=ctrl_sample[j], alpha=0.05,
+                calc_relative_mRNA(Cq_data_subset, ref_gene=ctrl_gene, ctrl_sample=ctrl_sample[j], alpha=0.1,
                                    add_subplot=(fig_rel_mRNA, int('%d2%d' % (len(dirnames), 2*i+j+1)), False),
                                    fig_title=fig_title)
                                  # add_subplot(figure, which figure=(row,col,idx), sharey=True|False)
