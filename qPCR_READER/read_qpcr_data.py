@@ -5,10 +5,28 @@ import csv
 from io import StringIO
 import re
 import itertools
+import sys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from warnings import warn
+import warnings
 from scipy.stats import linregress
+
+
+def warn_no_traceback(msg):
+    """
+    Emits a warning message without printing traceback or metadata.
+    The message is printed to stderr.
+
+    Parameters:
+        msg (str): The warning message to display
+    """
+    with warnings.catch_warnings(record=True) as w:
+        # Trigger the warning (caught internally)
+        warnings.warn(msg)
+        # Print just the message if warning was captured
+        if w:
+            print(f"{w[0].message}", file=sys.stderr)
+
 
 def dixon_q_test(data, alpha=0.05):
     """
@@ -247,7 +265,22 @@ def extract_cell_substrate_data(platemap, control=None):
     return Cq_data
 
 
+def outlier_warning_msg(sample, gene, idx, value, q_stat, q_critical):
+    msg = f"Outlier detected:\n  Sample: {sample}\n  Gene: {gene}\n  Index: {idx}\n  Value: {value}\n  " + \
+          f"Q Statistic: {q_stat:.3f}\n  Q Critical: {q_critical:.3f}"
+    return msg
+
+
 def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=None, **kwargs):
+
+    # process kwargs
+    fig_title = kwargs.get('fig_title', None)
+    fontsizes = kwargs.get('fontsizes', {})
+    fs_title = fontsizes.get('title', None)
+    fs_axis_labels = fontsizes.get('axis_labels', None)
+    fs_axis_ticks = fontsizes.get('axis_ticks', None)
+    fs_legend = fontsizes.get('legend', None)
+
     dCt = {}  # Delta Ct values
     # loop over (cell line, substrate) pairs
     for key in Cq_data.keys():
@@ -306,8 +339,9 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
                     dixon_q_test(2 ** -np.array(data), alpha=alpha)
                 if is_outlier:
                     DONE = False
-                    warn(f"Outlier detected: {ctrl_sample} : {key2}\nIndex: {outlier_idx}\nValue: {outlier_value}\n"
-                         f"Q Statistic: {q_stat:.3f}\nQ Critical: {q_critical:.3f}")
+                    warn_no_traceback(
+                        outlier_warning_msg(ctrl_sample, key2, outlier_idx, outlier_value, q_stat, q_critical)
+                    )
                     # remove outlier from dCt array (not ddCt)
                     for d in dCt[ctrl_sample][key2]:
                         if outlier_idx < len(d):
@@ -352,8 +386,9 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
                         dixon_q_test(2 ** -np.array(data), alpha=alpha)
                     if is_outlier:
                         DONE = False
-                        warn(f"Outlier detected: {key} : {key2}\nIndex: {outlier_idx}\nValue: {outlier_value}\n"
-                             f"Q Statistic: {q_stat:.3f}\nQ Critical: {q_critical:.3f}")
+                        warn_no_traceback(
+                            outlier_warning_msg(key, key2, outlier_idx, outlier_value, q_stat, q_critical)
+                        )
                         # remove outlier from ddCt array
                         for d in ddCt[key][key2]:
                             if outlier_idx < len(d):
@@ -402,16 +437,17 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
                 markers.append(Line2D.filled_markers[1:][k])
                 ax.plot([i + offset] * len(d), 2 ** -np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
                          mfc=cycle[j % 10], ms=8, mew=1, color='k')
-    ax.set_title(kwargs.get('fig_title', None), fontweight='bold')
+    ax.set_title(label=fig_title, fontweight='bold', fontsize=fs_title)
     ax.set_xticks(np.arange(len(ddCt.keys())),
                ['%s (%s)' % (xtick_subs[key[0]], xtick_subs[key[1]]) for key in ddCt.keys()])
-    ax.set_ylabel('relative mRNA')
+    ax.set_ylabel('relative mRNA', fontsize=fs_axis_labels)
+    ax.tick_params(axis='both', which='major', labelsize=fs_axis_ticks)
     # add legend for targets
     handles, labels = ax.get_legend_handles_labels()
     sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: x[1])
     handles, labels = zip(*sorted_handles_labels)
     leg1 = ax.legend(handles, labels, ncols=len(handles), bbox_to_anchor=(0.5, -0.12), loc='center', columnspacing=1,
-                     frameon=False)
+                     frameon=False, fontsize=fs_legend)
     # add legend for BioRep markers
     markers = [Line2D.filled_markers[1:][k] for k in range(len(np.unique(markers)))]
     handles = [
@@ -419,7 +455,7 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
     ]
     labels = ['TechRep %d' % (k+1) for k in range(len(markers))]
     ax.legend(handles, labels, ncols=min(5, len(handles)), bbox_to_anchor=(0.5, -0.18), loc='center', columnspacing=1,
-              handletextpad=0.1, frameon=False)
+              handletextpad=0.1, frameon=False, fontsize=fs_legend)
     # add the first legend back
     ax.add_artist(leg1)
 
@@ -511,12 +547,14 @@ def calc_standard_curves(dirname, r2threshold=0.98):
 
 if __name__ == '__main__':
 
+    kwargs = {'fontsizes': {'title': 18, 'axis_labels': 16, 'axis_ticks': 16}}  #, 'legend': 12}}
+
     # basedir = '.'
     # dirnames = ['TEST']
     # figname =  'qPCR_relative_mRNA_TEST.pdf'
 
     basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/MAY_AUG_2025' # '.'
-    dirnames = ['BioRep1', 'BioRep1_OLD'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD']
+    dirnames = ['BioRep1']  #, 'BioRep1_OLD'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD']
     figname = 'qPCR_relative_mRNA_BioRep1.pdf'
 
     fig_rel_mRNA = plt.figure(figsize=(6.4 * 2, 4.8 * len(dirnames)), constrained_layout=True)
@@ -588,7 +626,7 @@ if __name__ == '__main__':
             ddCt, fig_rel_mRNA = \
                 calc_relative_mRNA(Cq_data_subset, ref_gene=ctrl_gene, ctrl_sample=ctrl_sample[j], alpha=0.1,
                                    add_subplot=(fig_rel_mRNA, int('%d2%d' % (len(dirnames), 2*i+j+1)), False),
-                                   fig_title=fig_title)
+                                   fig_title=fig_title, **kwargs)
                                  # add_subplot(figure, which figure=(row,col,idx), sharey=True|False)
             # print ddCt values to the screen
             # for key in ddCt.keys():
