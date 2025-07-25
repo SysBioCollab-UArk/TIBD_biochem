@@ -8,8 +8,9 @@ import itertools
 import sys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import warnings
 from scipy.stats import linregress
+import warnings
+warnings.simplefilter("always")  # Ensures warning is shown
 
 
 def warn_no_traceback(msg):
