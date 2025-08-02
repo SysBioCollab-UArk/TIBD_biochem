@@ -99,7 +99,18 @@ def display_platemap(pmap):
                (well, pmap[well][0], pmap[well][1], pmap[well][2], pmap[well][3], pmap[well][4]) for well in wells])
 
 
-def read_platemap_data(dirname):
+def get_filepath_ignore_spaces(dirpath, prefix, suffix):
+    files = os.listdir(dirpath)
+    pattern = re.compile(rf"^{re.escape(prefix)}\s*-\s*{re.escape(suffix)}$")
+    matching_files = [f for f in files if pattern.match(f)]
+    if len(matching_files) == 1:
+        file_path = os.path.join(dirpath, matching_files[0])
+        return file_path
+    else:
+        raise FileNotFoundError(f"Expected one match, found {len(matching_files)}: {matching_files}")
+
+
+def read_platemap_info(dirname):
 
     # STEP 1: Read in the platemap info
     file_path = os.path.join(dirname, 'platemap.xlsx')
@@ -110,10 +121,11 @@ def read_platemap_data(dirname):
     platemap = {}
 
     reader = csv.reader(StringIO(platemap_csv), delimiter=',')
+    reader = ([cell.strip() for cell in line] for line in reader)  # strip all whitespace
     for line in reader:
         '''print(line)'''
-        if re.search('^Platemap:', line[0]):
-            pmap_name = re.search('^Platemap:\s*(.+)$', line[0]).group(1).strip()
+        if re.search(r'^Platemap:', line[0]):
+            pmap_name = re.search(r'^Platemap:\s*(.+)$', line[0]).group(1).strip()
             platemap[pmap_name] = {}  # make each individual platemap a dict with keys corresponding to wells
             while line[0] != 'Col_Row':
                 line = next(reader)
@@ -144,7 +156,8 @@ def read_platemap_data(dirname):
     # STEP 2: Read in the Cq values
     for pmap_name in platemap.keys():
 
-        file_path = os.path.join(dirname, 'RawData', '%s - Quantification Summary.xlsx' % pmap_name)
+        file_path = get_filepath_ignore_spaces(
+            os.path.join(dirname, 'RawData'), pmap_name, "Quantification Summary.xlsx")
         print("Reading '%s'" % os.path.basename(file_path))
         qpcr_data_xlsx = pd.read_excel(file_path, sheet_name=0, header=None)
         qpcr_data_csv = qpcr_data_xlsx.to_csv(header=False, index=False)
@@ -159,7 +172,7 @@ def read_platemap_data(dirname):
     # STEP 3: Read in additional information (cell line/substrate or dilution) for each sample
     # '''
     file_path = os.path.join(dirname, 'cell_culture_samples.xlsx')
-    samples_xlsx = pd.read_excel(file_path).astype(str)  #, header=None)
+    samples_xlsx = pd.read_excel(file_path).astype(str).applymap(str.strip)  #, header=None)
     samples_data = samples_xlsx.to_records(index=False)
     colnames = samples_data.dtype.names
 
@@ -464,40 +477,38 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
 
 
 def calc_standard_curves(dirname, r2threshold=0.98):
-    platemap_sc = read_platemap_data(dirname=os.path.join(dirname, 'RawData', 'StandardCurve'))
-    Cq_data_sc = extract_cell_substrate_data(platemap_sc, control=None)
+    platemap_std_curve = read_platemap_info(dirname=os.path.join(dirname, 'RawData', 'StandardCurve'))
+    Cq_data_std_curve = extract_cell_substrate_data(platemap_std_curve, control=None)
     # print platemap to the screen
-    '''for pmap_name in platemap_sc.keys():
+    '''for pmap_name in platemap_std_curve.keys():
         print('Platemap:', pmap_name)
-        display_platemap(platemap_sc[pmap_name])
-        print()'''
-    # print Cq values to the screen
-    genes_dilution = {}
-    for key in Cq_data_sc.keys():
+        display_platemap(platemap_std_curve[pmap_name])
+        print()
+    quit()'''
+    # Get list of genes (and print Cq values to the screen)
+    genes = []
+    for key in Cq_data_std_curve.keys():
         '''print(key)'''
-        for key2 in Cq_data_sc[key].keys():
+        for key2 in Cq_data_std_curve[key].keys():
             '''print('   %s:' % key2)'''
-            for key3 in Cq_data_sc[key][key2].keys():
-                if key3 not in list(genes_dilution.keys()):
-                    genes_dilution[key3] = key[1]
-                elif genes_dilution[key3] != key[1]:  # make sure this is the same dilution factor
-                    raise Exception('Dilution factor for gene %s already recorded as %d. This value is %d.' %
-                                    (key3, genes_dilution[key3], key[1]))
-
-                '''print('      %s:' % key3, Cq_data_sc[key][key2][key3], np.mean(Cq_data_sc[key][key2][key3]))
-        print()'''
+            for key3 in Cq_data_std_curve[key][key2].keys():
+                '''print('      %s:' % key3, Cq_data_std_curve[key][key2][key3],
+                      '<%g>' % np.mean(Cq_data_std_curve[key][key2][key3]))'''
+                if key3 not in genes:
+                    genes.append(key3)
+    '''quit()'''
 
     # Get log10(conc) vs. Cq values for each gene and calculate standard curves
     log10conc_Cq = {}
     std_curve = {}
-    for gene in genes_dilution.keys():
+    for gene in genes:  # genes_dilution.keys():
         log10conc_Cq[gene] = np.vstack([
             (
-                np.log10(key[0]), np.mean(data),
+                np.log10(float(key[0]) / float(key[1])), np.mean(data),
                 np.std(data, ddof=1) / np.sqrt(len(data)) if len(data) > 1 else np.std(data, ddof=0)
             )
-            for key in Cq_data_sc.keys() for key2 in Cq_data_sc[key].keys()
-            if gene in Cq_data_sc[key][key2].keys() and (data := Cq_data_sc[key][key2][gene])
+            for key in Cq_data_std_curve.keys() for key2 in Cq_data_std_curve[key].keys()
+            if gene in Cq_data_std_curve[key][key2].keys() and (data := Cq_data_std_curve[key][key2][gene])
         ])
         # sort the array based on the x-axis values from least to most negative
         log10conc_Cq[gene] = log10conc_Cq[gene][log10conc_Cq[gene][:, 0].argsort()[::-1]]
@@ -516,13 +527,12 @@ def calc_standard_curves(dirname, r2threshold=0.98):
             idxs.pop(-1)  # remove the last point
         '''print()'''
         # std_curve[gene] = (fit_line, genes_dilution[gene])  # second value is the dilution factor
-        std_curve[gene] = {'fit_line': fit_line, 'dilution': genes_dilution[gene], 'range': min_max}
+        std_curve[gene] = {'fit_line': fit_line, 'Cq_range': min_max}  # 'dilution': genes_dilution[gene],
         '''print(std_curve[gene])'''
 
     # plot standard curves for all genes
     fig_sc = plt.figure(constrained_layout=True)
     cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']  # standard colors
-    genes = genes_dilution.keys()
     ncols = int(np.ceil(np.sqrt(len(genes))))
     nrows = int(np.ceil(len(genes) / ncols))
     for i, gene in enumerate([ctrl_gene] + sorted([g for g in genes if g != ctrl_gene])):
@@ -534,14 +544,16 @@ def calc_standard_curves(dirname, r2threshold=0.98):
         # add fit line to the plot
         fit_line = std_curve[gene]['fit_line']
         yvals = fit_line.slope * log10conc_Cq[gene][:, 0] + fit_line.intercept
-        ax.plot(log10conc_Cq[gene][:, 0], yvals, color='0.5', ls='--', lw=3,
-                label=f'y = {fit_line.slope:.1f}*x+{fit_line.intercept:.1f}\n$R^2$ = {fit_line.rvalue ** 2:.3g}')
-        ax.set_xlabel(r'log$_{10}$[concentration ($\mu$g/$\mu$l)]')
+        ax.plot(log10conc_Cq[gene][:, 0], yvals, color='0.5', ls='--', lw=2,
+                label=f' y = {fit_line.slope:.1f}*x+{fit_line.intercept:.1f} \n $R^2$ = {fit_line.rvalue ** 2:.3g} ')
+        ax.set_xlabel(r'log$_{10}$ concentration ($\mu$g/$\mu$l)')
         ax.set_ylabel(r'$C_t$')
-        # Retrieve handles and labels, reverse their order, and then create the legend
-        handles, labels = plt.gca().get_legend_handles_labels()
-        handles, labels = handles[::-1], labels[::-1]
-        ax.legend(handles, labels, loc='best', frameon=False)
+        # plot horizontal lines indicating the range of Cq values
+        ax.axhline(std_curve[gene]['Cq_range'][0], ls=':', color='r')
+        ax.axhline(std_curve[gene]['Cq_range'][1], ls=':', color='r')
+        # Hide the handle in the legend
+        ax.legend(loc='best', handlelength=0, handletextpad=0, facecolor='white', framealpha=1, edgecolor='white',
+                  borderpad=0)
 
     return std_curve, fig_sc
 
@@ -555,8 +567,8 @@ if __name__ == '__main__':
     # figname =  'qPCR_relative_mRNA_TEST.pdf'
 
     basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/MAY_AUG_2025' # '.'
-    dirnames = ['BioRep1']  #, 'BioRep1_OLD'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD']
-    figname = 'qPCR_relative_mRNA_BioRep1.pdf'
+    dirnames = ['BioRep1', 'BioRep2']  #, 'BioRep1_OLD'] #, 'BioRep2', 'BioRep3']  # ['BioRep3_OLD']
+    figname = 'qPCR_relative_mRNA.pdf'
 
     fig_rel_mRNA = plt.figure(figsize=(6.4 * 2, 4.8 * len(dirnames)), constrained_layout=True)
 
@@ -565,7 +577,7 @@ if __name__ == '__main__':
         print('=== %s ===\n' % os.path.split(dirname)[1])
 
         # Read platemap info
-        platemap = read_platemap_data(dirname=dirname)
+        platemap = read_platemap_info(dirname=dirname)
         # print platemap to the screen
         '''for pmap_name in platemap.keys():
             print('Platemap:', pmap_name)
@@ -573,14 +585,12 @@ if __name__ == '__main__':
             print()
         quit()'''
 
-        # Get Cq data from platemap
+        # Get Cq data based on platemap info
         ctrl_gene = '18S'
         Cq_data_rel = extract_cell_substrate_data(platemap, control=ctrl_gene)
-        '''
         Cq_data_abs = extract_cell_substrate_data(platemap, control=None)
-        '''
         # print Cq values to the screen
-        '''Cq_data = Cq_data_rel  # Cq_data_abs
+        '''Cq_data = Cq_data_abs  # Cq_data_abs Cq_data_rel
         for key in Cq_data.keys():
             print(key)
             for key2 in Cq_data[key].keys():
@@ -591,7 +601,7 @@ if __name__ == '__main__':
         quit()'''
 
         # Get standard curves
-        '''std_curve, fig_sc = calc_standard_curves(dirname, r2threshold=0.88)
+        std_curve, fig_std_curve = calc_standard_curves(dirname, r2threshold=0.88)
         # print standard curves to the screen and plot data points on top of the curves
         for n, gene in enumerate([ctrl_gene] + sorted([g for g in std_curve.keys() if g != ctrl_gene])):
             fit_line = std_curve[gene]['fit_line']
@@ -606,13 +616,17 @@ if __name__ == '__main__':
                         if re.search('^%s' % gene, key3):
                             Cq_gene += [item for sublist in Cq_data_abs[key][key2][key3] for item in sublist]
                             # print('      (%s, %s):' % (gene, key3), Cq_gene)
-            Cq_gene = np.array(Cq_gene)
-            # print(Cq_gene)
-            log10conc = (Cq_gene - fit_line.intercept) / fit_line.slope
-            fig_sc.axes[n].plot(log10conc, Cq_gene, 'r^', mfc='None')
+            Cq_gene_range = std_curve[gene]['Cq_range']
+            Cq_gene_within_range = [cq for cq in Cq_gene if Cq_gene_range[0] <= cq <= Cq_gene_range[1]]
+            Cq_gene_out_of_range = [cq for cq in Cq_gene if cq < Cq_gene_range[0] or cq > Cq_gene_range[1]]
+            for Cq_vals, marker, color in zip([Cq_gene_within_range, Cq_gene_out_of_range], ['^', 'x'], ['r', 'gold']):
+                log10conc = (np.array(Cq_vals) - fit_line.intercept) / fit_line.slope
+                fig_std_curve.axes[n].plot(log10conc, Cq_vals, ls='', marker=marker, mfc='None', color=color,
+                                           zorder=0)
         print()
         # save standard curve figure
-        fig_sc.savefig(os.path.join(dirname, '%s_standard_curves.pdf' % os.path.split(dirname)[1]), format='pdf')'''
+        outfile = os.path.join(dirname, '%s_standard_curves.pdf' % os.path.split(dirname)[1])
+        fig_std_curve.savefig(outfile, format='pdf')
 
         # Calculate relative and absolute mRNA levels
         cell_line_groups = [['Bone Clone'], ['Parental']]
