@@ -172,7 +172,7 @@ def read_platemap_info(dirname):
 
     # STEP 3: Read in additional information (cell line/substrate or dilution) for each sample
     file_path = os.path.join(dirname, 'cell_culture_samples.xlsx')
-    samples_xlsx = pd.read_excel(file_path).astype(str).applymap(str.strip)  #, header=None)
+    samples_xlsx = pd.read_excel(file_path).astype(str).map(str.strip)  #, header=None)
     samples_data = samples_xlsx.to_records(index=False)
     colnames = samples_data.dtype.names
 
