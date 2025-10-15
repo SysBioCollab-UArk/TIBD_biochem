@@ -195,7 +195,7 @@ def read_platemap_info(dirname):
     vol_units = colnames[2].split('_')
     if len(mass_units) == len(vol_units) == 2:
         conc_units = '%s/%s' % (mass_units[1].replace('u', r'$\mu$'), vol_units[1].replace('u', r'$\mu$'))
-        print('conc_units:', conc_units)
+        '''print('conc_units:', conc_units)'''
         return platemap, conc_units
     else:
         return platemap
@@ -293,7 +293,7 @@ def outlier_warning_msg(sample, gene, idx, value, q_stat, q_critical):
     return msg
 
 
-def plot_gene_expression(ax, mRNA_expr, genes, ctrl_sample, **kwargs):
+def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ctrl_sample, **kwargs):
     # process kwargs
     plot_title = kwargs.get('plot_title', None)
     ylabel = kwargs.get('ylabel', 'mRNA expression')
@@ -308,21 +308,21 @@ def plot_gene_expression(ax, mRNA_expr, genes, ctrl_sample, **kwargs):
     width = 0.75 / len(genes)
     markers = []
     labels = []
-    mRNA_expr_keys_sorted = [ctrl_sample] + sorted([k for k in mRNA_expr.keys() if k != ctrl_sample])
+    mRNA_expr_keys_sorted = [ctrl_sample] + sorted([k for k in mRNA_expr_dict.keys() if k != ctrl_sample])
     for i, key in enumerate(mRNA_expr_keys_sorted):
-        print(key)
-        for key2 in mRNA_expr[key].keys():
-            print('  ', key2)
+        '''print(key)'''
+        for key2 in mRNA_expr_dict[key].keys():
+            '''print('  ', key2)'''
             j = genes.index(key2)
-            data = [dd for d in mRNA_expr[key][key2] for dd in d if not np.isnan(dd)]
-            print('    ', mRNA_expr[key][key2])
+            data = [dd for d in mRNA_expr_dict[key][key2] for dd in d if not np.isnan(dd)]
+            '''print('    ', mRNA_expr_dict[key][key2])'''
             label = None
             if key2 not in labels:  # need to do this to make sure we get all the gene labels
                 label = key2
                 labels.append(label)
             offset = width * (j - 1)
             ax.bar(i + offset, np.mean(data), width=0.8 * width, color=cycle[j % 10], label=label)
-            for k, d in enumerate([rep for rep in mRNA_expr[key][key2] if not all(np.isnan(ct) for ct in rep)]):
+            for k, d in enumerate([rep for rep in mRNA_expr_dict[key][key2] if not all(np.isnan(ct) for ct in rep)]):
                 d = [ct for ct in d if not np.isnan(ct)]  # remove NaNs
                 markers.append(Line2D.filled_markers[1:][k])
                 ax.plot([i + offset] * len(d), np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
@@ -348,15 +348,30 @@ def plot_gene_expression(ax, mRNA_expr, genes, ctrl_sample, **kwargs):
     ax.add_artist(leg1)
 
 
-def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=None, **kwargs):
+def find_and_remove_outliers(data_dict, key, key2, remove_dict=None, pop=True, alpha=0.05):
+    if remove_dict is None:
+        remove_dict = data_dict
+    is_outlier = False
+    data = [dd for d in data_dict[key][key2] for dd in d if not np.isnan(dd)]
+    # make sure there are at least 3 data points
+    if len(data) >= 3:
+        is_outlier, outlier_idx, outlier_value, q_stat, q_critical = dixon_q_test(data, alpha=alpha)
+        if is_outlier:
+            warn_no_traceback(outlier_warning_msg(key, key2, outlier_idx, outlier_value, q_stat, q_critical))
+            # remove outlier from 'remove_dict'
+            for d in remove_dict[key][key2]:
+                if outlier_idx < len(d):
+                    if pop:
+                        d.pop(outlier_idx)
+                    else:
+                        d[outlier_idx] = None
+                    break
+                else:
+                    outlier_idx -= len(d)
+    return is_outlier
 
-    # process kwargs
-    plot_title = kwargs.get('plot_title', None)
-    fontsizes = kwargs.get('fontsizes', {})
-    fs_title = fontsizes.get('title', None)
-    fs_axis_labels = fontsizes.get('axis_labels', None)
-    fs_axis_ticks = fontsizes.get('axis_ticks', None)
-    fs_legend = fontsizes.get('legend', None)
+
+def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=None, **kwargs):
 
     dCt = {}  # Delta Ct values
     # loop over (cell line, substrate) pairs
@@ -388,11 +403,15 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
     genes = list(np.unique([gene for cell_substr in dCt.keys() for gene in dCt[cell_substr].keys()]))
 
     ddCt = {}  # Delta Delta Ct values
+    rel_mRNA = {}  # 2^-ddCt values
     # First, calculate ddCt values for the control (cell line, substrate) pair and look for outliers
+    # NOTE the control sample values must equal 1, so if an outlier is detected the ddCt values must be recalculated
+    print('Checking for outliers in data for control sample:', ctrl_sample)
     DONE = False
     while not DONE:
         DONE = True
         # Calculate ddCt values
+        '''print('Calculate ddCt values for control sample')'''
         ddCt[ctrl_sample] = dict(
             zip(
                 list(dCt[ctrl_sample].keys()),
@@ -400,38 +419,38 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
                   for d in dCt[ctrl_sample][gene]] for gene in dCt[ctrl_sample].keys()]
             )
         )
-        '''print('== ddCt ==')
+        '''
+        print('== ddCt ==')
         for key in ddCt.keys():
             print(key)
             for key2 in ddCt[key].keys():
                 print('\t', key2, ddCt[key][key2])
-        print()'''
+        print()
+        '''
 
         # Identify and remove outliers using Dixon's Q Test
+        rel_mRNA[ctrl_sample] = {}
         for key2 in ddCt[ctrl_sample].keys():
-            data = [dd for d in ddCt[ctrl_sample][key2] for dd in d]
-            # check for outliers if there are at least 3 data points
-            if len(data) >= 3:
-                is_outlier, outlier_idx, outlier_value, q_stat, q_critical = \
-                    dixon_q_test(2 ** -np.array(data), alpha=alpha)
-                if is_outlier:
-                    DONE = False
-                    warn_no_traceback(
-                        outlier_warning_msg(ctrl_sample, key2, outlier_idx, outlier_value, q_stat, q_critical)
-                    )
-                    # remove outlier from dCt array (not ddCt)
-                    for d in dCt[ctrl_sample][key2]:
-                        if outlier_idx < len(d):
-                            d.pop(outlier_idx)
-                            break
-                        else:
-                            outlier_idx -= len(d)
-        '''print('== dCt ==')
+            '''print('  ', key2)'''
+            rel_mRNA[ctrl_sample][key2] = [2 ** -np.array(d) for d in ddCt[ctrl_sample][key2]]
+            # remove outliers from dCt dict (not ddCt)
+            found_outlier = find_and_remove_outliers(rel_mRNA, ctrl_sample, key2, remove_dict=dCt, pop=True,
+                                                     alpha=alpha)
+            if found_outlier:
+                DONE = False
+            '''
+            print('     Outlier?', found_outlier)
+            print('     DONE?', DONE)
+            '''
+        '''
+        print('== dCt ==')
         print(ctrl_sample)
         for key2 in dCt[ctrl_sample].keys():
             print('\t', key2, dCt[ctrl_sample][key2])
         print()
-    print('NO MORE OUTLIERS!\n')'''
+
+    print('NO MORE OUTLIERS!\n')
+    '''
 
     # Now, calculate ddCt values for all other (cell line, substrate) pairs ...
     for cell_substr in [key for key in dCt.keys() if key != ctrl_sample]:
@@ -443,45 +462,32 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
                  if gene in dCt[ctrl_sample].keys()]
             )
         )
-    '''print('== ddCt ==')
-    for cell_substr in [key for key in dCt.keys() if key != ctrl_sample]:
-        print(cell_substr)
-        for key2 in ddCt[cell_substr].keys():
-            print('\t', key2, ddCt[cell_substr][key2])
-    print()'''
-
-    # ...and identify and remove outliers using Dixon's Q Test
-    DONE = False
-    while not DONE:
-        DONE = True
+        # ...and identify and remove outliers using Dixon's Q Test
+        print('Checking for outliers in data for sample:', str(cell_substr))
         for key in ddCt.keys():
+            '''print(key)'''
+            rel_mRNA[key] = {}
             for key2 in ddCt[key].keys():
-                data = [dd for d in ddCt[key][key2] for dd in d if not np.isnan(dd)]
-                # check for outliers if there are at least 3 data points
-                if len(data) >= 3:
-                    is_outlier, outlier_idx, outlier_value, q_stat, q_critical = \
-                        dixon_q_test(2 ** -np.array(data), alpha=alpha)
-                    if is_outlier:
-                        DONE = False
-                        warn_no_traceback(
-                            outlier_warning_msg(key, key2, outlier_idx, outlier_value, q_stat, q_critical)
-                        )
-                        # remove outlier from ddCt array
-                        for d in ddCt[key][key2]:
-                            if outlier_idx < len(d):
-                                d[outlier_idx] = None
-                                break
-                            else:
-                                outlier_idx -= len(d)
-        '''print('== ddCt ==')
-        for key in ddCt.keys():
+                '''print('  ', key2)'''
+                rel_mRNA[key][key2] = [2 ** -np.array(d) for d in ddCt[key][key2]]
+                DONE = False
+                while not DONE:
+                    # remove outliers from rel_mRNA dict
+                    DONE = not find_and_remove_outliers(rel_mRNA, key, key2, pop=False, alpha=alpha)
+                    '''print('     DONE?', DONE)'''
+        '''
+        print('== rel_mRNA ==')
+        for key in rel_mRNA.keys():
             print(key)
             for key2 in ddCt[key].keys():
-                print('\t', key2, ddCt[key][key2])
+                print('\t', key2, rel_mRNA[key][key2])
         print()
-    print('NO MORE OUTLIERS!\n')'''
+        
+    print('NO MORE OUTLIERS!\n')
+    '''
 
     # Plot relative mRNA levels
+    print('Plotting relative mRNA expression')
     if add_subplot is None:
         fig, ax = plt.subplots(constrained_layout=True)
     else:
@@ -491,51 +497,8 @@ def calc_relative_mRNA(Cq_data, ref_gene, ctrl_sample, alpha=0.05, add_subplot=N
         if add_subplot[2] is True and len(fig_axes) > 0:
             sharey = fig_axes[-1] # share y-axes between all plots
         ax = fig.add_subplot(add_subplot[1], sharey=sharey)
-    print('Plotting relative mRNA expression')
-    xtick_subs = {'Bone Clone': 'Bone', 'Parental': 'Par', 'Plastic': 'TC', 'LC Aligned': 'AC', 'LC Random': 'RC'}
-    cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']  # standard colors
-    width = 0.75 / len(genes)
-    markers = []
-    labels = []
-    for i, key in enumerate(ddCt.keys()):
-        print(key)
-        for key2 in ddCt[key].keys():
-            print('  ', key2)
-            j = genes.index(key2)
-            data = [dd for d in ddCt[key][key2] for dd in d if not np.isnan(dd)]
-            print('    ', ddCt[key][key2])
-            print('    ', 2 ** -np.array(data))
-            label = None
-            if key2 not in labels:  # need to do this to make sure we get all the gene labels
-                label = key2
-                labels.append(label)
-            offset = width * (j - 1)
-            ax.bar(i + offset, 2 ** -np.mean(data), width=0.8 * width, color=cycle[j % 10], label=label)
-            for k, d in enumerate(ddCt[key][key2]):
-                markers.append(Line2D.filled_markers[1:][k])
-                ax.plot([i + offset] * len(d), 2 ** -np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
-                         mfc=cycle[j % 10], ms=8, mew=1, color='k')
-    ax.set_title(label=plot_title, fontweight='bold', fontsize=fs_title)
-    ax.set_xticks(np.arange(len(ddCt.keys())),
-               ['%s (%s)' % (xtick_subs[key[0]], xtick_subs[key[1]]) for key in ddCt.keys()])
-    ax.set_ylabel('relative mRNA', fontsize=fs_axis_labels)
-    ax.tick_params(axis='both', which='major', labelsize=fs_axis_ticks)
-    # add legend for targets
-    handles, labels = ax.get_legend_handles_labels()
-    sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: x[1])
-    handles, labels = zip(*sorted_handles_labels)
-    leg1 = ax.legend(handles, labels, ncols=len(handles), bbox_to_anchor=(0.5, -0.12), loc='center', columnspacing=1,
-                     frameon=False, fontsize=fs_legend)
-    # add legend for BioRep markers
-    markers = [Line2D.filled_markers[1:][k] for k in range(len(np.unique(markers)))]
-    handles = [
-        Line2D([0], [0], marker=m, color='black', ls='None', ms=8, mfc='None') for m in markers
-    ]
-    labels = ['TechRep %d' % (k+1) for k in range(len(markers))]
-    ax.legend(handles, labels, ncols=min(5, len(handles)), bbox_to_anchor=(0.5, -0.18), loc='center', columnspacing=1,
-              handletextpad=0.1, frameon=False, fontsize=fs_legend)
-    # add the first legend back
-    ax.add_artist(leg1)
+
+    plot_mRNA_expression(ax, rel_mRNA, list(genes), ctrl_sample, **kwargs)
 
     return ddCt, fig
 
@@ -644,7 +607,7 @@ if __name__ == '__main__':
 
     for i, dirname in enumerate([os.path.join(basedir, d) for d in dirnames]):
 
-        print('=== %s ===\n' % os.path.split(dirname)[1])
+        print('\n=== %s ===\n' % os.path.split(dirname)[1])
 
         # Read platemap info
         platemap = read_platemap_info(dirname=dirname)
@@ -701,26 +664,28 @@ if __name__ == '__main__':
         quit()'''
 
         # Get standard curves
+        print('\nCalculating standard curves')
         std_curve, fig_std_curve = calc_standard_curves(dirname, r2threshold=0.95)
+        '''
         print('std_curve:', std_curve)
         print("std_curve['Gli2']:", std_curve['Gli2'])
         print("std_curve['Gli2']['fit_line']:", std_curve['Gli2']['fit_line'])
+        '''
         # print standard curves to the screen and plot data points on top of the curves
         for n, gene in enumerate([ctrl_gene] + sorted([g for g in std_curve.keys() if g != ctrl_gene and
                                                                                       g != 'conc_units'])):
-            print('gene:', gene)
             fit_line = std_curve[gene]['fit_line']
-            print('%s:' % gene, f'Ct = {fit_line.slope:.2f}*log10(conc) + {fit_line.intercept:.2f}, '
+            print('%s:' % gene, f'Ct = {fit_line.slope:.2f} * log10(conc) + {fit_line.intercept:.2f}, '
                                 f'R^2 = {fit_line.rvalue ** 2:.3g}')
             Cq_gene = []  # collect data for this gene to plot on top of the standard curve
             for key in Cq_data_abs.keys():
-                # print(key)
+                '''print(key)'''
                 for key2 in Cq_data_abs[key].keys():
-                    # print('   %s:' % key2)
+                    '''print('   %s:' % key2)'''
                     for key3 in Cq_data_abs[key][key2].keys():
                         if re.search('^%s' % gene, key3):
                             Cq_gene += [item for sublist in Cq_data_abs[key][key2][key3] for item in sublist]
-                            # print('      (%s, %s):' % (gene, key3), Cq_gene)
+                            '''print('      (%s, %s):' % (gene, key3), Cq_gene)'''
             Cq_gene_range = std_curve[gene]['Cq_range']
             Cq_gene_within_range = [cq for cq in Cq_gene if Cq_gene_range[0] <= cq <= Cq_gene_range[1]]
             Cq_gene_out_of_range = [cq for cq in Cq_gene if cq < Cq_gene_range[0] or cq > Cq_gene_range[1]]
@@ -751,17 +716,18 @@ if __name__ == '__main__':
                                    # add_subplot(figure, which_figure = (row, col, idx), sharey = True | False)
                                    plot_title=plot_title, ylabel='relative mRNA', **kwargs)
             # print ddCt values to the screen
-            '''for key in ddCt.keys():
+            '''
+            for key in ddCt.keys():
                 print(key)
                 for key2 in ddCt[key].keys():
                     print('  %s:' % key2, ddCt[key][key2])
                     data = [dd for d in ddCt[key][key2] for dd in d]
                     print('    data:', data)
                     print('    2^-data:', 2 ** -np.array(data))
-                    print('    2^-mean(data):', 2 ** -np.mean(data))'''
+                    print('    2^-mean(data):', 2 ** -np.mean(data))
+            '''
 
             # Calculate absolute mRNA levels
-            # TODO: Find outliers
             abs_mRNA_ctrl_gene_global = \
                 10 ** ((np.mean(Cq_ctrl_gene) - std_curve[ctrl_gene]['fit_line'].intercept) /
                        std_curve[ctrl_gene]['fit_line'].slope) * std_curve[ctrl_gene]['dilution']
@@ -770,15 +736,15 @@ if __name__ == '__main__':
                                   key[1] in group[1])
             abs_mRNA_all = {}
             for key in Cq_data_subset.keys():
-                print(key)
+                '''print(key)'''
                 abs_mRNA_all[key] = {}
                 for key2 in Cq_data_subset[key].keys():
-                    print('  ', key2)
+                    '''print('  ', key2)'''
                     abs_mRNA_all[key][key2] = {}
                     # loop over genes, with the ctrl_gene first
                     if ctrl_gene in list(Cq_data_subset[key][key2].keys()):
                         for key3 in list(dict.fromkeys([ctrl_gene] + list(Cq_data_subset[key][key2].keys()))):
-                            print('    ', key3)
+                            '''print('    ', key3)'''
                             fit_line = std_curve[key3]['fit_line']
                             min_max = std_curve[key3]['Cq_range']
                             dilution_factor = std_curve[key3]['dilution']
@@ -786,11 +752,11 @@ if __name__ == '__main__':
                             abs_mRNA_all[key][key2][key3] = []
                             for Ct_vals in Cq_data_subset[key][key2][key3]:
                                 #####
-                                print('         Ct:', Ct_vals)
+                                '''print('         Ct:', Ct_vals)
                                 print(f'         conc = 10 ** ((Ct - {fit_line.intercept:.2f}) / {fit_line.slope:.2f}) * '
                                       f'{dilution_factor}')
                                 conc = 10 ** ((np.array(Ct_vals) - fit_line.intercept) / fit_line.slope) * dilution_factor
-                                print('         conc =', conc)
+                                print('         conc =', conc)'''
                                 #####
                                 # print('         abs_mRNA_ctrl_gene_global:', abs_mRNA_ctrl_gene_global)
                                 # print('         abs_mRNA_all[key][key2][ctrl_gene]:', [ct for rep in abs_mRNA_all[key][key2][ctrl_gene] for ct in rep])
@@ -803,9 +769,10 @@ if __name__ == '__main__':
                                 abs_mRNA_all[key][key2][key3].append(
                                     [10 ** ((ct - fit_line.intercept) / fit_line.slope) * dilution_factor * scale_factor
                                      for ct in Ct_vals if ct <= min_max[1]])  # min_max[0] <= ct <= min_max[1] # TODO
-                            print('         abs_mRNA:', abs_mRNA_all[key][key2][key3])
+                            '''print('         abs_mRNA:', abs_mRNA_all[key][key2][key3])'''
                     else:
-                         print('    ' + 'No data for the internal control gene %s...skipping.' % ctrl_gene)
+                         print('%s -> %s:' % (key, key2), 'No data for the internal control gene %s...skipping.' %
+                               ctrl_gene)
 
             # Get average absolute mRNA levels for each technical replicate
             abs_mRNA_techRep = {}
@@ -819,31 +786,24 @@ if __name__ == '__main__':
                     for key2 in abs_mRNA_all[cell_substr].keys():
                         abs_mRNA_techRep[cell_substr][gene].append(
                             [np.mean(x) for x in abs_mRNA_all[cell_substr][key2].get(gene, [np.nan])])
-            print('== abs_mRNA_techRep ==')
+
+            # Identify and remove outliers using Dixon's Q Test
+            print('Checking for outliers in absolute mRNA data')
             for cell_substr in abs_mRNA_techRep.keys():
-                print(cell_substr)
+                '''print(cell_substr)'''
                 for key2 in abs_mRNA_techRep[cell_substr].keys():
-                    print('\t%s:' % key2, abs_mRNA_techRep[cell_substr][key2])
-            print()
+                    '''print('\t%s:' % key2, abs_mRNA_techRep[cell_substr][key2])'''
+                    DONE = False
+                    while not DONE:
+                        DONE = not find_and_remove_outliers(abs_mRNA_techRep, cell_substr, key2, pop=True, alpha=0.1)
+                        '''print('\t\tDONE?', DONE)'''
+            '''print()'''
 
             # plot absolute mRNA expression levels
-            print('Plotting absolute mRNA expression')
+            print('Plotting absolute mRNA expression levels')
             ax = fig_abs_mRNA.add_subplot(int('%d2%d' % (len(dirnames), 2 * i + j + 1)), sharey=None)
-            plot_gene_expression(ax, abs_mRNA_techRep, list(genes), ctrl_sample[j], plot_title=plot_title,
+            plot_mRNA_expression(ax, abs_mRNA_techRep, list(genes), ctrl_sample[j], plot_title=plot_title,
                                  ylabel='absolute mRNA (%s)' % std_curve['conc_units'], **kwargs)
-
-            # quit()
-
-            # print(Cq_data_subset)
-            # print(abs_mRNA)
-            # ctrl_gene_abs_mRNA = [m[i] for key in abs_mRNA.keys() for key2 in abs_mRNA[key].keys()
-            #                       for key3 in abs_mRNA[key][key2].keys() if key3 == ctrl_gene
-            #                       for m in abs_mRNA[key][key2][key3] for i in range(len(m))]
-            # print(ctrl_gene_abs_mRNA)
-            # print(len(ctrl_gene_abs_mRNA))
-            # print(np.mean(ctrl_gene_abs_mRNA))
-            # quit()
-            #####
 
     # save relative mRNA figure
     fig_rel_mRNA.savefig(os.path.join(basedir, figname), format='pdf')
