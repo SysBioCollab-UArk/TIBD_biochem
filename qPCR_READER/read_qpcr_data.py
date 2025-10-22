@@ -209,13 +209,18 @@ def read_platemap_info(dirname):
             if sample != '':  # make sure this is not an empty well
                 platemap[pmap_name][well][3:4] = [samples_dict[sample][0], samples_dict[sample][1]]
 
-    # check for concentration units
+    # check for concentration units (standard curve)
     mass_units = colnames[1].split('_')
     vol_units = colnames[2].split('_')
     if len(mass_units) == len(vol_units) == 2:
         conc_units = '%s/%s' % (mass_units[1].replace('u', r'$\mu$'), vol_units[1].replace('u', r'$\mu$'))
         '''print('conc_units:', conc_units)'''
-        return platemap, conc_units
+        mass_amount = samples_data[colnames[1]]
+        if len(np.unique(mass_amount)) > 1:
+            raise Exception("cDNA amounts in 2nd column of 'cell_culture_samples.xlsx' must all be equal: %s" % dirname)
+        mass_amount = int(mass_amount[0])
+        '''print('mass_amount:', mass_amount)'''
+        return platemap, conc_units, mass_amount
     else:
         return platemap
 
@@ -303,12 +308,15 @@ def extract_cell_substrate_data(platemap, control=None):
 def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     # process kwargs
     plot_title = kwargs.get('plot_title', None)
-    ylabel = kwargs.get('ylabel', 'mRNA expression')
     fontsizes = kwargs.get('fontsizes', {})
     fs_title = fontsizes.get('title', None)
     fs_axis_labels = fontsizes.get('axis_labels', None)
     fs_axis_ticks = fontsizes.get('axis_ticks', None)
     fs_legend = fontsizes.get('legend', None)
+    ylabel = kwargs.get('ylabel', 'mRNA expression')
+    scale = kwargs.get('scale', 1)
+    if scale != 1:
+        ylabel += r' $\times$ %g' % scale
 
     xtick_subs = {'Bone Clone': 'Bone', 'Parental': 'Par', 'Plastic': 'TC', 'LC Aligned': 'AC', 'LC Random': 'RC'}
     cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']  # standard colors
@@ -334,11 +342,11 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
                 label = key2
                 labels.append(label)
             offset = width * (j - 1)
-            ax.bar(i + offset, np.mean(data), width=0.8 * width, color=cycle[j % 10], label=label)
+            ax.bar(i + offset, np.mean(data) * scale, width=0.8 * width, color=cycle[j % 10], label=label)
             for k, d in enumerate([rep for rep in mRNA_expr_dict[key][key2] if not all(np.isnan(ct) for ct in rep)]):
                 d = [ct for ct in d if not np.isnan(ct)]  # remove NaNs
                 markers.append(Line2D.filled_markers[1:][k])
-                ax.plot([i + offset] * len(d), np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
+                ax.plot([i + offset] * len(d), np.array(d) * scale, ls='', marker=Line2D.filled_markers[1:][k],
                         mfc=cycle[j % 10], ms=8, mew=1, color='k')
     ax.set_title(label=plot_title, fontweight='bold', fontsize=fs_title)
     ax.set_xticks(np.arange(len(mRNA_expr_keys_sorted)),
@@ -539,7 +547,7 @@ def plot_Cq_data(ax, Cq_data, **kwargs):
 
 def calc_standard_curves(dirname, r2threshold=0.98):
     dirpath = os.path.join(dirname, 'RawData', 'StandardCurve')
-    platemap_std_curve, conc_units = read_platemap_info(dirname=dirpath)
+    platemap_std_curve, conc_units, cDNA_amount = read_platemap_info(dirname=dirpath)
     Cq_data_std_curve = extract_cell_substrate_data(platemap_std_curve, control=None)
     dilution_xlsx = pd.read_excel(os.path.join(dirpath, 'dilution.xlsx'), header=0)
     dilution_dict = dict(zip(dilution_xlsx['Gene'], dilution_xlsx['Dilution']))
@@ -565,7 +573,7 @@ def calc_standard_curves(dirname, r2threshold=0.98):
 
     # Get log10(conc) vs. Cq values for each gene and calculate standard curves
     log10conc_Cq = {}
-    std_curve = {'conc_units': conc_units}
+    std_curve = {'conc_units': conc_units, 'cDNA_amount': cDNA_amount}
     for gene in genes:
         log10conc_Cq[gene] = np.vstack([
             (
@@ -688,7 +696,7 @@ def calc_absolute_mRNA(Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_sample=Non
             '''print('\t%s:' % key2, abs_mRNA_techRep[cell_substr][key2])'''
             DONE = False
             while not DONE:
-                DONE = not find_and_remove_outliers(abs_mRNA_techRep, cell_substr, key2, pop=True, alpha=0.1)
+                DONE = not find_and_remove_outliers(abs_mRNA_techRep, cell_substr, key2, pop=True, alpha=alpha)
                 '''print('\t\tDONE?', DONE)'''
     '''print()'''
 
@@ -776,8 +784,8 @@ if __name__ == '__main__':
         fig_std_curve.suptitle('%s' % os.path.split(dirname)[1])
 
         # Print standard curves to the screen and plot data points on top of the curves
-        for n, gene in enumerate([ctrl_gene] + sorted([g for g in std_curve.keys() if g != ctrl_gene and
-                                                                                      g != 'conc_units'])):
+        for n, gene in enumerate([ctrl_gene] + sorted([g for g in std_curve.keys() if
+                                                       g not in [ctrl_gene, 'conc_units', 'cDNA_amount']])):
             fit_line = std_curve[gene]['fit_line']
             print('%s:' % gene, f'Ct = {fit_line.slope:.2f} * log10(conc) + {fit_line.intercept:.2f}, '
                                 f'R^2 = {fit_line.rvalue ** 2:.3g}')
@@ -842,13 +850,18 @@ if __name__ == '__main__':
             print('\nCalculating absolute mRNA expression levels')
             Cq_data_subset = dict((key, Cq_data_abs[key]) for key in Cq_data_abs if key[0] in group[0] and
                                   key[1] in group[1])
+            # calculate scaling factor
+            if i == 0:
+                cDNA_amount_ref = std_curve['cDNA_amount']
+            scale = cDNA_amount_ref / std_curve['cDNA_amount']
             abs_mRNA, fig_abs_mRNA = \
                 calc_absolute_mRNA(
                     Cq_data_subset, ctrl_gene, Cq_ctrl_gene, std_curve, ref_sample=ctrl_sample[j], alpha=0.1,
                     add_subplot = (fig_abs_mRNA, int('%d2%d' % (len(dirnames), 2 * i + j + 1)),
                                    mRNA_kwargs.get('sharey', False)),
                     # add_subplot(figure, which_figure = (row, col, idx), sharey = True | False)
-                    plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'], **mRNA_kwargs
+                    plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'], scale=scale,
+                    **mRNA_kwargs
                 )
 
     # Save figures
