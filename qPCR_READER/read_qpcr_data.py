@@ -737,11 +737,9 @@ def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_s
     rna_and_cell_vols_df = get_rna_soln_and_cell_volumes(dirname)
     rna_and_cell_vols_df = rna_and_cell_vols_df.set_index('Sample')  # set index to sample number to speed up lookups
 
-    # TODO: Need to modify this calculation to get concentrations in ng/uL in the cell
-    # TODO: Or maybe what we should do is scale by the reference Ct values first before calculating absolute mRNA (?)
-    abs_mRNA_ctrl_gene_global = \
-        10 ** ((np.mean(Cq_ref_gene) - std_curve[ref_gene]['fit_line'].intercept) /
-               std_curve[ref_gene]['fit_line'].slope) * std_curve[ref_gene]['dilution']
+    # abs_mRNA_ctrl_gene_global = \
+    #     10 ** ((np.mean(Cq_ref_gene) - std_curve[ref_gene]['fit_line'].intercept) /
+    #            std_curve[ref_gene]['fit_line'].slope) * std_curve[ref_gene]['dilution']
 
     abs_mRNA_all = {}
     for key in Cq_data.keys():
@@ -763,6 +761,7 @@ def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_s
                     abs_mRNA_all[key][key2][key3] = []
                     for Ct_vals in Cq_data[key][key2][key3]:
                         '''print('         Ct:', Ct_vals)'''
+                        # scale the absolute mRNA concentrations by the ratio of the local and global 18S Ct values
                         # if local mean(Ct_18S) < global mean(Ct_18S), increase Ct -> decrease absolute conc
                         scale_factor = np.mean([ct for rep in Cq_data[key][key2][ctrl_gene] for ct in rep]) / \
                                        np.mean(Cq_ref_gene)
