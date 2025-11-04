@@ -10,7 +10,6 @@ import sys
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.stats import linregress
-
 import warnings, traceback
 warnings.simplefilter("always")  # Ensures warning is shown
 set_warnings_traceback = False  # set to True if want full traceback for warnings
@@ -47,6 +46,16 @@ def outlier_warning_msg(sample, gene, idx, value, q_stat, q_critical):
     msg = f"Outlier detected:\n  Sample: {sample}\n  Gene: {gene}\n  Index: {idx}\n  Value: {value}\n  " + \
           f"Q Statistic: {q_stat:.3f}\n  Q Critical: {q_critical:.3f}"
     return msg
+
+
+def strip_whitespace_from_df(df):
+    # Trim column names
+    df.columns = df.columns.str.strip()
+    # Trim leading/trailing whitespace in all string columns
+    obj = df.select_dtypes(include="object").columns
+    df[obj] = df[obj].apply(lambda s: s.str.strip())
+    # return modified df
+    return df
 
 
 def dixon_q_test(data, alpha=0.05):
@@ -306,6 +315,7 @@ def extract_cell_substrate_data(platemap, control=None):
 
 
 def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
+
     # process kwargs
     plot_title = kwargs.get('plot_title', None)
     fontsizes = kwargs.get('fontsizes', {})
@@ -314,9 +324,6 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     fs_axis_ticks = fontsizes.get('axis_ticks', None)
     fs_legend = fontsizes.get('legend', None)
     ylabel = kwargs.get('ylabel', 'mRNA expression')
-    scale = kwargs.get('scale', 1)
-    if scale != 1:
-        ylabel += r' $\times$ %g' % scale
 
     xtick_subs = {'Bone Clone': 'Bone', 'Parental': 'Par', 'Plastic': 'TC', 'LC Aligned': 'AC', 'LC Random': 'RC'}
     cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']  # standard colors
@@ -342,11 +349,11 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
                 label = key2
                 labels.append(label)
             offset = width * (j - 1)
-            ax.bar(i + offset, np.mean(data) * scale, width=0.8 * width, color=cycle[j % 10], label=label)
+            ax.bar(i + offset, np.mean(data), width=0.8 * width, color=cycle[j % 10], label=label)
             for k, d in enumerate([rep for rep in mRNA_expr_dict[key][key2] if not all(np.isnan(ct) for ct in rep)]):
                 d = [ct for ct in d if not np.isnan(ct)]  # remove NaNs
                 markers.append(Line2D.filled_markers[1:][k])
-                ax.plot([i + offset] * len(d), np.array(d) * scale, ls='', marker=Line2D.filled_markers[1:][k],
+                ax.plot([i + offset] * len(d), np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
                         mfc=cycle[j % 10], ms=8, mew=1, color='k')
     ax.set_title(label=plot_title, fontweight='bold', fontsize=fs_title)
     ax.set_xticks(np.arange(len(mRNA_expr_keys_sorted)),
@@ -630,19 +637,121 @@ def calc_standard_curves(dirname, r2threshold=0.98):
     return std_curve, fig_sc
 
 
-def calc_absolute_mRNA(Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_sample=None, alpha=0.05, add_subplot=None,
-                       **kwargs):
+# TODO: Modify this function to fit data to total # of cells vs. RNA yield to estimate cell counts
+def get_cell_counts_hemocytometer(dirname):
 
+    counts_df = pd.read_excel(os.path.join(dirname, 'cell_counts_hemocytometer.xlsx'), header=0)
+
+    # solution volume
+    vol_column = [col for col in counts_df.columns if 'Soln_Vol' in col][0]
+    vol_units = vol_column.replace('Soln_Vol', '').replace('(', '').replace(')', '').strip()
+    if counts_df[vol_column].dropna().nunique() == 1:
+        soln_vol = counts_df[vol_column].dropna().unique()[0]
+    else:
+        raise Exception("Only one value of the cells solution volume in 'cell_counts.xlsx' is allowed. The "
+                        "following values were read:", counts_df[vol_column].dropna().unique())
+
+    # dilution factor
+    if counts_df['Dilution'].dropna().nunique() == 1:
+        dilution = counts_df['Dilution'].dropna().unique()[0]
+    else:
+        raise Exception("Only one value of the dilution factor in 'cell_counts.xlsx' is allowed. The "
+                        "following values were read:", counts_df['Dilution'].dropna().unique())
+
+    # hemocytometer cell counts
+    counts_cols = [col for col in counts_df.columns if col not in
+                   ['Sample', 'Dilution', 'Soln_Vol (%s)' % vol_units]]
+    num_squares = len(np.unique([re.sub(r'(\w)\d+', r'\1', col) for col in counts_cols]))
+    tot_columns = []
+    for i in range(0, len(counts_cols), num_squares):
+        columns = counts_cols[i:i + num_squares]
+        tot_columns.append('tot_' + ''.join(columns))
+        counts_df[tot_columns[-1]] = counts_df[columns].sum(axis=1)
+
+    # average cell counts over all hemocytometer squares
+    counts_df['avg_count'] = counts_df[tot_columns].mean(axis=1)
+
+    # cell concentrations
+    counts_df['cell_conc (cells/mL)'] = counts_df['avg_count'] / num_squares * dilution * 1e4
+
+    # total cell counts
+    if vol_units.lower() != 'ml':
+        raise Exception("Units for cell concentrations (cells/mL) and solution volume (%s) must be consistent." %
+                        vol_units)
+    counts_df['tot_cells'] = counts_df['cell_conc (cells/mL)'] * soln_vol
+
+    return counts_df[['Sample', 'tot_cells']].rename(columns={'tot_cells': 'NumCells'})
+
+
+def get_cell_counts(dirname):
+    if os.path.exists(os.path.join(dirname, 'cell_counts.xlsx')):
+        return pd.read_excel(os.path.join(dirname, 'cell_counts.xlsx'), header=0)
+    elif os.path.exists(os.path.join(dirname, 'cell_counts_hemocytometer.xlsx')):
+        return get_cell_counts_hemocytometer(dirname)
+    else:
+        raise Exception("Can't find 'cell_counts.xlsx' or 'cell_counts_hemocytometer.xlsx' in %s" % dirname)
+
+
+def get_rna_soln_and_cell_volumes(dirname):
+
+    # === Get mRNA yields ===
+    rna_df = pd.read_excel(os.path.join(dirname, 'rna_extraction.xlsx'), header=0)
+    # solution volume
+    vol_column = [col for col in rna_df.columns if 'Soln_Vol' in col][0]
+    vol_units = vol_column.replace('Soln_Vol', '').replace('(', '').replace(')', '').strip()
+    if rna_df[vol_column].dropna().nunique() == 1:
+        rna_vol = rna_df[vol_column].dropna().unique()[0]
+    else:
+        raise Exception("Only one value of the RNA solution volume in 'rna_extraction.xlsx' is allowed. The "
+                        "following values were read:", rna_df[vol_column].dropna().unique())
+    rna_df = pd.DataFrame({'Sample': rna_df['Sample'].tolist(),
+                           'Soln_Vol': [rna_vol] * len(rna_df),
+                           'Soln_Vol_Units:': [vol_units] * len(rna_df)})
+    '''print(rna_df.columns)
+    print('RNA extraction fluid:\n', rna_df)'''
+
+    # === Get cell counts ===
+    counts_df = get_cell_counts(dirname)
+
+    # === Get cell volumes ===
+    cell_vols_df = pd.read_excel(os.path.join(dirname, 'cell_vols.xlsx'))
+
+    # === Read in sample info ===
+    samples_df = pd.read_excel(os.path.join(dirname, 'cell_culture_samples.xlsx'), header=0)
+    samples_df = strip_whitespace_from_df(samples_df)
+
+    # === Merge dataframes ===
+    merged_df = rna_df.merge(counts_df, on='Sample', how='outer').rename(columns={vol_column: 'RNA_' + vol_column})
+    merged_df = merged_df.merge(samples_df[['Sample', 'CellLine']], on='Sample', how='outer')
+    merged_df = merged_df.merge(cell_vols_df[['CellLine', 'Volume', 'Units']], on='CellLine', how='left').rename(
+        columns={'Volume': 'CellVolume', 'Units': "CellVolume_Units"})
+    '''print(merged_df.columns)
+    print(merged_df)'''
+
+    return merged_df
+
+
+def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_sample=None, alpha=0.05,
+                       add_subplot=None, **kwargs):
+
+    rna_and_cell_vols_df = get_rna_soln_and_cell_volumes(dirname)
+    rna_and_cell_vols_df = rna_and_cell_vols_df.set_index('Sample')  # set index to sample number to speed up lookups
+
+    # TODO: Need to modify this calculation to get concentrations in ng/uL in the cell
+    # TODO: Or maybe what we should do is scale by the reference Ct values first before calculating absolute mRNA (?)
     abs_mRNA_ctrl_gene_global = \
         10 ** ((np.mean(Cq_ref_gene) - std_curve[ref_gene]['fit_line'].intercept) /
                std_curve[ref_gene]['fit_line'].slope) * std_curve[ref_gene]['dilution']
 
     abs_mRNA_all = {}
     for key in Cq_data.keys():
-        '''print(key)'''
+        '''print('(%s, %s)' % (key[0], key[1]))'''
         abs_mRNA_all[key] = {}
         for key2 in Cq_data[key].keys():
             '''print('  ', key2)'''
+            # get volume of RNA extraction fluid, number of cells in the sample, and estimated cell volume
+            soln_vol, num_cells, cell_vol = rna_and_cell_vols_df.loc[int(key2), ['Soln_Vol', 'NumCells', 'CellVolume']]
+            sv_DIV_nc_DIV_cv = np.inf if num_cells == 0 else soln_vol / num_cells / cell_vol
             abs_mRNA_all[key][key2] = {}
             # loop over genes, with the ctrl_gene first
             if ctrl_gene in list(Cq_data[key][key2].keys()):
@@ -654,17 +763,18 @@ def calc_absolute_mRNA(Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_sample=Non
                     abs_mRNA_all[key][key2][key3] = []
                     for Ct_vals in Cq_data[key][key2][key3]:
                         '''print('         Ct:', Ct_vals)'''
-                        scale_factor = 1 if key3 == ctrl_gene \
-                            else abs_mRNA_ctrl_gene_global / np.mean([ct for rep in
-                                                                      abs_mRNA_all[key][key2][ctrl_gene]
-                                                                      for ct in rep])
+                        # if local mean(Ct_18S) < global mean(Ct_18S), increase Ct -> decrease absolute conc
+                        scale_factor = np.mean([ct for rep in Cq_data[key][key2][ctrl_gene] for ct in rep]) / \
+                                       np.mean(Cq_ref_gene)
+                        '''print('            scale_factor:', scale_factor)'''
                         abs_mRNA_all[key][key2][key3].append(
                             [10 ** ((ct - fit_line.intercept) / fit_line.slope) * dilution_factor * scale_factor
+                             * sv_DIV_nc_DIV_cv  # soln_vol / num_cells / cell_vol
                              for ct in Ct_vals if ct <= min_max[1]])  # min_max[0] <= ct <= min_max[1] # TODO
                     '''print('         abs_mRNA:', abs_mRNA_all[key][key2][key3])'''
             else:
-                print('%s, sample %s:' % (key, key2), 'No data for the internal control gene %s...skipping.' %
-                      ctrl_gene)
+                print('No data for the internal control gene %s: (%s, %s), sample %s...Skipping.' %
+                      (ctrl_gene, key[0], key[1], key2))
 
     # Get average absolute mRNA levels for each technical replicate
     abs_mRNA_techRep = {}
@@ -679,8 +789,9 @@ def calc_absolute_mRNA(Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_sample=Non
             abs_mRNA_techRep[cell_substr][gene] = []
             for key2 in abs_mRNA_all[cell_substr].keys():
                 '''print('\t\t%s' % key2)'''
+                # use np.ma.masked_invalid() to ignore all NaN and +/-inf
                 abs_mRNA_techRep[cell_substr][gene].append(
-                    [np.nanmean(x) if len(x) > 0 and np.any(np.isfinite(x)) else np.nan
+                    [np.ma.masked_invalid(x).mean() if len(x) > 0 and np.any(np.isfinite(x)) else np.nan
                      for x in abs_mRNA_all[cell_substr][key2].get(gene, [[np.nan]])]
                 )
                 '''
@@ -808,8 +919,8 @@ if __name__ == '__main__':
         # Save standard curve figure
         outfile = '%s_standard_curves.pdf' % os.path.split(dirname)[1]
         fig_std_curve.savefig(os.path.join(dirname, outfile), format='pdf')
-        print('\nSaving %s...' % outfile)
-        print('...to %s' % os.path.abspath(dirname))
+        print('\nSaving %s to...' % outfile)
+        print('...%s' % os.path.abspath(dirname))
 
         # Calculate relative and absolute mRNA levels
         cell_line_groups = [['Bone Clone'], ['Parental']]
@@ -850,17 +961,13 @@ if __name__ == '__main__':
             print('\nCalculating absolute mRNA expression levels')
             Cq_data_subset = dict((key, Cq_data_abs[key]) for key in Cq_data_abs if key[0] in group[0] and
                                   key[1] in group[1])
-            # calculate scaling factor
-            if i == 0:
-                cDNA_amount_ref = std_curve['cDNA_amount']
-            scale = cDNA_amount_ref / std_curve['cDNA_amount']
             abs_mRNA, fig_abs_mRNA = \
                 calc_absolute_mRNA(
-                    Cq_data_subset, ctrl_gene, Cq_ctrl_gene, std_curve, ref_sample=ctrl_sample[j], alpha=0.1,
+                    dirname, Cq_data_subset, ctrl_gene, Cq_ctrl_gene, std_curve, ref_sample=ctrl_sample[j], alpha=0.1,
                     add_subplot = (fig_abs_mRNA, int('%d2%d' % (len(dirnames), 2 * i + j + 1)),
                                    mRNA_kwargs.get('sharey', False)),
                     # add_subplot(figure, which_figure = (row, col, idx), sharey = True | False)
-                    plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'], scale=scale,
+                    plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'],
                     **mRNA_kwargs
                 )
 
