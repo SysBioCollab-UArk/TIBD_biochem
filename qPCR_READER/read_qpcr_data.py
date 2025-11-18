@@ -8,8 +8,13 @@ import re
 import itertools
 import sys
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 from matplotlib.lines import Line2D
+import matplotlib.legend
 from scipy.stats import linregress
+import seaborn as sns
+from itertools import combinations
+from statannotations.Annotator import Annotator
 import warnings, traceback
 warnings.simplefilter("always")  # Ensures warning is shown
 set_warnings_traceback = False  # set to True if want full traceback for warnings
@@ -326,54 +331,161 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     ylabel = kwargs.get('ylabel', 'mRNA expression')
 
     xtick_subs = {'Bone Clone': 'Bone', 'Parental': 'Par', 'Plastic': 'TC', 'LC Aligned': 'AC', 'LC Random': 'RC'}
-    cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']  # standard colors
-    width = 0.75 / len(genes)
-    markers = []
-    labels = []
-    if ref_sample is None:
-        mRNA_expr_keys_sorted = sorted(list(mRNA_expr_dict.keys()))
-    else:
-        mRNA_expr_keys_sorted = [ref_sample] + sorted([k for k in mRNA_expr_dict.keys() if k != ref_sample])
-    for i, key in enumerate(mRNA_expr_keys_sorted):
-        '''print(key)'''
+
+    # Create mRNA data dictionary with 'condition', 'expression', and 'techRep' keys
+    mRNA_data = dict([(key2, {'condition': [], 'expression': [], 'techRep': []}) for key in mRNA_expr_dict.keys()
+                      for key2 in mRNA_expr_dict[key].keys()])
+    for key in mRNA_expr_dict.keys():
+        '''print('(%s, %s)' % (key[0], key[1]))'''
         for key2 in mRNA_expr_dict[key].keys():
-            '''print('  ', key2)'''
-            j = genes.index(key2)
-            data = [dd for d in mRNA_expr_dict[key][key2] for dd in d if not np.isnan(dd)]
-            if len(data) == 0:
-                continue
-            '''print('data:', data)'''
-            '''print('    ', mRNA_expr_dict[key][key2])'''
-            label = None
-            if key2 not in labels:  # need to do this to make sure we get all the gene labels
-                label = key2
-                labels.append(label)
-            offset = width * (j - 1)
-            ax.bar(i + offset, np.mean(data), width=0.8 * width, color=cycle[j % 10], label=label)
-            for k, d in enumerate([rep for rep in mRNA_expr_dict[key][key2] if not all(np.isnan(ct) for ct in rep)]):
-                d = [ct for ct in d if not np.isnan(ct)]  # remove NaNs
-                markers.append(Line2D.filled_markers[1:][k])
-                ax.plot([i + offset] * len(d), np.array(d), ls='', marker=Line2D.filled_markers[1:][k],
-                        mfc=cycle[j % 10], ms=8, mew=1, color='k')
-    ax.set_title(label=plot_title, fontweight='bold', fontsize=fs_title)
-    ax.set_xticks(np.arange(len(mRNA_expr_keys_sorted)),
-                  ['%s (%s)' % (xtick_subs[key[0]], xtick_subs[key[1]]) for key in mRNA_expr_keys_sorted])
+            '''print('  %s:' % key2, mRNA_expr_dict[key][key2])'''
+            data = []
+            techRep = []
+            rep = 0
+            for d in mRNA_expr_dict[key][key2]:
+                if len(d) > 0:
+                    techRep.append(rep)
+                    data += list(d)
+                    rep += 1
+            mRNA_data[key2]['condition'] += \
+                ['%s (%s)' % (xtick_subs.get(key[0], key[0]), xtick_subs.get(key[1], key[1]))] * len(data)
+            mRNA_data[key2]['expression'] += data
+            mRNA_data[key2]['techRep'] += techRep
+
+    # Create mRNA dataframe
+    rows = []
+    for gene, inner in mRNA_data.items():
+        for cond, expr, tech in zip(inner['condition'], inner['expression'], inner['techRep']):
+            rows.append({
+                'condition': cond,
+                'gene': str(gene),  # or gene.item() if you want plain str
+                'expression': float(expr),  # converts np.float64 → Python float
+                'techRep': tech
+            })
+    mRNA_expr_df = pd.DataFrame(rows)
+
+    # Plot barplot with seaborn
+    sample_order = np.sort(mRNA_expr_df['condition'].unique())  # enforce order of samples
+    if ref_sample is not None:
+        ref_sample = ('%s (%s)' %
+                      (xtick_subs.get(ref_sample[0], ref_sample[0]), xtick_subs.get(ref_sample[1], ref_sample[1])))
+        sample_order = [ref_sample] + [sample for sample in sample_order if sample != ref_sample]
+    hue_order = genes  # enforce order of genes
+    sns.barplot(ax=ax, data=mRNA_expr_df, x='condition', y='expression', hue='gene', order=sample_order,
+                hue_order=hue_order, estimator='mean', errorbar='se', capsize=0.1, palette='bright')
+    ax.legend(title=None)
+    # shrink bar widths to create real gaps between bars
+    shrink_factor = 0.75  # 0.75 of original width; tweak as needed
+    for bar in ax.patches:
+        orig_width = bar.get_width()
+        center = bar.get_x() + orig_width / 2.0
+        new_width = orig_width * shrink_factor
+        bar.set_width(new_width)
+        bar.set_x(center - new_width / 2.0)
+
+    # Add stripplot with data points to each bar
+    markers = Line2D.filled_markers[1:mRNA_expr_df['techRep'].nunique() + 1]
+    for rep, marker in enumerate(markers):
+        subset = mRNA_expr_df[mRNA_expr_df['techRep'] == rep]
+        sns.stripplot(data=subset, x='condition', y='expression', hue='gene', order=sample_order, hue_order=hue_order,
+                      dodge=True, jitter=True, marker=marker, size=10, linewidth=1, edgecolor='k', alpha=1,
+                      palette='muted', ax=ax)
+
+    # Create legends
+    # add a legend for gene targets
+    handles, labels = ax.get_legend_handles_labels()
+    gene_leg = ax.legend(handles[:3], labels[:3], ncols=3, loc='center', bbox_to_anchor=(0.5, -0.12),
+                         columnspacing=1, handletextpad=0.5, frameon=False, fontsize=None)  # fs_legend)
+    ax.add_artist(gene_leg)
+    # add a second legend for tech rep symbols
+    techRep_handles = [
+        mlines.Line2D([], [], color='black', marker=marker, linestyle='None', markersize=8,
+                      markeredgewidth=1.5, markerfacecolor='none', label='TechRep %d' % rep)
+        for rep, marker in enumerate(markers)
+    ]
+    techRep_leg = ax.legend(handles=techRep_handles, ncols=min(5, len(techRep_handles)), loc='center',
+                            bbox_to_anchor=(0.5, -0.18), columnspacing=1, handletextpad=0.1,
+                            frameon=False, fontsize=None)  # fs_legend)
+
+    # Add statannotations *after* tweaking bar widths
+    pairs = [] # define comparison pairs (compare conditions within each gene)
+    for gene in mRNA_expr_df['gene'].unique():
+        df_gene = mRNA_expr_df[mRNA_expr_df['gene'] == gene]
+        pairs.extend(list(combinations(
+            list(set(zip(df_gene['condition'].tolist(), df_gene['gene'].tolist()))), 2))
+        )
+    # (('Bone (TC)', 'Gli2'), ('Bone (AC)', 'Gli2'))
+    annotator = Annotator(ax, pairs, data=mRNA_expr_df, x='condition', y='expression', hue='gene',
+                          order=sample_order, hue_order=hue_order)
+    alpha = 0.05  # p-value significance level
+    annotator.configure(test='t-test_ind', text_format='star', comparisons_correction='bonferroni',
+                        loc='inside', text_offset=0, line_height=0.04, verbose=1, hide_non_significant=True,
+                        alpha=alpha,  # Only show brackets for p ≤ alpha
+                        pvalue_thresholds=[
+                            (alpha / 1000, r"${\ast}{\ast}{\ast}{\ast}$"),
+                            (alpha / 100, r"${\ast}{\ast}{\ast}$"),
+                            (alpha / 10, r"${\ast}{\ast}$"),
+                            (alpha, r"$\ast$"),
+                            (1, "ns")])
+    annotator.apply_and_annotate()
+    for text in ax.texts:
+        if text.get_text() in \
+                {r"$\ast$", r"${\ast}{\ast}$", r"${\ast}{\ast}{\ast}$", r"${\ast}{\ast}{\ast}{\ast}$", "ns"}:
+            text.set_fontsize(14)
+
+    # add a third legend for significance testing levels
+    if any(r.text != "ns" for r in annotator._get_results(num_comparisons=len(annotator.pairs))):
+        ax.add_artist(techRep_leg)  # add the tech rep legend back in
+        sig_legend_handles = [
+            mlines.Line2D([], [], color='black', marker='', linestyle='None',
+                          label=rf'{label} p $\leq$ {thresh:.0e}')
+            for thresh, label in annotator.pvalue_thresholds[:-1]  # skip 'ns' if desired
+        ]
+        sig_leg = ax.legend(handles=sig_legend_handles, ncols=len(annotator.pvalue_thresholds), loc='center',
+                            bbox_to_anchor=(0.5, -0.24), columnspacing=0, handletextpad=0,
+                            frameon=False, fontsize=None)  # fs_legend)
+
+    # Finish up plot
+    ax.set_xlabel(None)
     ax.set_ylabel(ylabel, fontsize=fs_axis_labels)
     ax.tick_params(axis='both', which='major', labelsize=fs_axis_ticks)
-    # add legend for targets
-    handles, labels = ax.get_legend_handles_labels()
-    sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: x[1])
-    handles, labels = zip(*sorted_handles_labels)
-    leg1 = ax.legend(handles, labels, ncols=len(handles), bbox_to_anchor=(0.5, -0.12), loc='center', columnspacing=1,
-                     frameon=False, fontsize=fs_legend)
-    # add legend for BioRep markers
-    markers = [Line2D.filled_markers[1:][k] for k in range(len(np.unique(markers)))]
-    handles = [Line2D([0], [0], marker=m, color='black', ls='None', ms=8, mfc='None') for m in markers]
-    labels = ['TechRep %d' % (k + 1) for k in range(len(markers))]
-    ax.legend(handles, labels, ncols=min(5, len(handles)), bbox_to_anchor=(0.5, -0.18), loc='center', columnspacing=1,
-              handletextpad=0.1, frameon=False, fontsize=fs_legend)
-    # add the first legend back
-    ax.add_artist(leg1)
+    # Switch to scientific notation if >= 1000 (use abs() in case values are negative)
+    if max(abs(ax.get_yticks())) >= 1000:
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
+        ax.yaxis.get_offset_text().set_fontsize(fs_axis_ticks)
+    ax.set_title(plot_title, fontsize=fs_title, fontweight='bold')
+    sns.despine()
+
+
+    def add_legend_to_fig(legend):
+        handles = legend.legend_handles
+        labels = [text.get_text() for text in legend.get_texts()]
+        ax.figure.legend(handles, labels, ncols=legend._ncols, loc='center', columnspacing=legend.columnspacing,
+                         handletextpad=legend.handletextpad, frameon=False, fontsize=fs_legend,
+                         bbox_to_anchor=(0.5, offset))
+
+
+    # Put the legend at the bottom of the figure
+    legends = [child for child in ax.get_children() if isinstance(child, matplotlib.legend.Legend)]
+    fig_legends = [child for child in ax.figure.get_children() if isinstance(child, matplotlib.legend.Legend)]
+    offset = 0.02 + 0.03 * (max(len(legends), len(fig_legends)) - 1)  # 0.08
+    # adjust figure area to make space for the figure legend
+    bottom = offset + 0.02  # 0.1
+    ax.figure.get_layout_engine().set(
+        rect=(0, bottom, 1, 1 - bottom))  # (left, bottom, width, height)
+    # loop over local legends
+    for i, legend in enumerate(legends):
+        # legends that already exist in the figure
+        if i < len(fig_legends):
+            # if there are more elements in the local legend than the figure legend, add the local legend to the figure
+            if len(legend.legend_handles) > len(fig_legends[i].legend_handles):
+                add_legend_to_fig(legend)
+        # new legends to add to the figure
+        else:
+            add_legend_to_fig(legend)
+        offset -= 0.03
+        # delete local legend
+        legend.remove()
 
 
 def find_and_remove_outliers(data_dict, key, key2, remove_dict=None, pop=True, alpha=0.05):
@@ -528,7 +640,7 @@ def calc_relative_mRNA(Cq_data, ref_gene, ref_sample, alpha=0.05, add_subplot=No
 
     plot_mRNA_expression(ax, rel_mRNA, list(genes), ref_sample, **kwargs)
 
-    return ddCt, fig
+    return rel_mRNA, fig
 
 
 def plot_Cq_data(ax, Cq_data, **kwargs):
@@ -545,7 +657,7 @@ def plot_Cq_data(ax, Cq_data, **kwargs):
     ax.plot(np.arange(len(Cq_data)), Cq_data, 'o', label=r'$C_t = %g \pm %g$' % (avg, sdev))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    ax.set_title(title, fontweight='bold')
     handles, labels = ax.get_legend_handles_labels()
     empty_handles = [Line2D([], [], linestyle='None', marker=None) for _ in labels]
     ax.legend(empty_handles, labels, loc='best', handlelength=0, handletextpad=0, frameon=False)
@@ -680,7 +792,7 @@ def get_cell_counts_hemocytometer(dirname):
                         vol_units)
     counts_df['tot_cells'] = counts_df['cell_conc (cells/mL)'] * soln_vol
 
-    return counts_df[['Sample', 'tot_cells']].rename(columns={'tot_cells': 'NumCells'})
+    return counts_df.rename(columns={'tot_cells': 'NumCells'})
 
 
 def get_cell_counts(dirname):
@@ -736,10 +848,6 @@ def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_s
 
     rna_and_cell_vols_df = get_rna_soln_and_cell_volumes(dirname)
     rna_and_cell_vols_df = rna_and_cell_vols_df.set_index('Sample')  # set index to sample number to speed up lookups
-
-    # abs_mRNA_ctrl_gene_global = \
-    #     10 ** ((np.mean(Cq_ref_gene) - std_curve[ref_gene]['fit_line'].intercept) /
-    #            std_curve[ref_gene]['fit_line'].slope) * std_curve[ref_gene]['dilution']
 
     abs_mRNA_all = {}
     for key in Cq_data.keys():
@@ -837,8 +945,7 @@ if __name__ == '__main__':
     dirnames = ['BioRep2', 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD']
     fig_prefix = 'TIBD_qPCR'
 
-    mRNA_kwargs = {'fontsizes': {'title': 18, 'axis_labels': 16, 'axis_ticks': 16},  # , 'legend': 12}}
-                   'sharey': True}
+    mRNA_kwargs = {'fontsizes': {'title': 18, 'axis_labels': 16, 'axis_ticks': 16, 'legend': 14}, 'sharey': True}
 
     fig_rel_mRNA = plt.figure(figsize=(6.4 * 2, 4.8 * len(dirnames)), constrained_layout=True)
     fig_abs_mRNA = plt.figure(figsize=(6.4 * 2, 4.8 * len(dirnames)), constrained_layout=True)
@@ -891,7 +998,7 @@ if __name__ == '__main__':
         # Get standard curves
         print('\nCalculating standard curves')
         std_curve, fig_std_curve = calc_standard_curves(dirname, r2threshold=0.95)
-        fig_std_curve.suptitle('%s' % os.path.split(dirname)[1])
+        fig_std_curve.suptitle('%s' % os.path.split(dirname)[1], fontweight='bold')
 
         # Print standard curves to the screen and plot data points on top of the curves
         for n, gene in enumerate([ctrl_gene] + sorted([g for g in std_curve.keys() if
@@ -936,7 +1043,7 @@ if __name__ == '__main__':
             print('\nCalculating relative mRNA expression levels')
             Cq_data_subset = dict((key, Cq_data_rel[key]) for key in Cq_data_rel if key[0] in group[0] and
                                   key[1] in group[1])
-            ddCt, fig_rel_mRNA = \
+            rel_mRNA, fig_rel_mRNA = \
                 calc_relative_mRNA(
                     Cq_data_subset, ctrl_gene, ref_sample=ctrl_sample[j], alpha=0.1,
                     add_subplot=(fig_rel_mRNA, int('%d2%d' % (len(dirnames), 2*i+j+1)),
@@ -945,15 +1052,14 @@ if __name__ == '__main__':
                     plot_title=plot_title, ylabel='relative mRNA', **mRNA_kwargs
                 )
             '''
-            # print ddCt values to the screen
-            for key in ddCt.keys():
+            # print relative mRNA values to the screen
+            for key in rel_mRNA.keys():
                 print(key)
-                for key2 in ddCt[key].keys():
-                    print('  %s:' % key2, ddCt[key][key2])
-                    data = [dd for d in ddCt[key][key2] for dd in d]
+                for key2 in rel_mRNA[key].keys():
+                    print('  %s:' % key2, rel_mRNA[key][key2])
+                    data = [dd for d in rel_mRNA[key][key2] for dd in d]
                     print('    data:', data)
-                    print('    2^-data:', 2 ** -np.array(data))
-                    print('    2^-mean(data):', 2 ** -np.mean(data))
+                    print('    mean(data):', np.mean(data))
             '''
 
             # Calculate absolute mRNA levels
@@ -963,12 +1069,22 @@ if __name__ == '__main__':
             abs_mRNA, fig_abs_mRNA = \
                 calc_absolute_mRNA(
                     dirname, Cq_data_subset, ctrl_gene, Cq_ctrl_gene, std_curve, ref_sample=ctrl_sample[j], alpha=0.1,
-                    add_subplot = (fig_abs_mRNA, int('%d2%d' % (len(dirnames), 2 * i + j + 1)),
+                    add_subplot = (fig_abs_mRNA, int('%d2%d' % (len(dirnames), 2*i+j+1)),
                                    mRNA_kwargs.get('sharey', False)),
                     # add_subplot(figure, which_figure = (row, col, idx), sharey = True | False)
                     plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'],
                     **mRNA_kwargs
                 )
+            '''
+            # print absolute mRNA values to the screen
+            for key in abs_mRNA.keys():
+                print('(%s, %s)' % (key[0], key[1]))
+                for key2 in abs_mRNA[key].keys():
+                    print('  %s:' % key2, abs_mRNA[key][key2])
+                    data = [dd for d in abs_mRNA[key][key2] for dd in d]
+                    print('    data:', np.array(data))
+                    print('    mean(data):', np.mean(data))
+            '''
 
     # Save figures
     print('\nSaving...')
