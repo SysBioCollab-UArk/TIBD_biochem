@@ -20,6 +20,28 @@ warnings.simplefilter("always")  # Ensures warning is shown
 set_warnings_traceback = False  # set to True if want full traceback for warnings
 
 
+# --- Monkey patch to enable per-annotation line colors ---
+# Save original functions
+_orig_annotate_pair = Annotator._annotate_pair
+_orig_plot_line = Annotator._plot_line
+
+def _annotate_pair_patched(self, annotation, ax_to_data, ann_list, orig_value_lim):
+    # Store reference to current annotation
+    self._current_annotation = annotation
+    # Call original method
+    return _orig_annotate_pair(self, annotation, ax_to_data, ann_list, orig_value_lim)
+
+def _plot_line_patched(self, line_x, line_y):
+    ann = getattr(self, "_current_annotation", None)
+    color = getattr(ann, "line_color", self.color)
+    lw = getattr(ann, "line_width", self.line_width)
+    self.ax.plot(line_x, line_y, lw=lw, c=color, clip_on=False)
+
+# Apply patches
+Annotator._annotate_pair = _annotate_pair_patched
+Annotator._plot_line = _plot_line_patched
+
+
 def warn_no_traceback(msg):
     """
     Emits a warning message without printing traceback or metadata.
@@ -370,9 +392,8 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
         ref_sample = ('%s (%s)' %
                       (xtick_subs.get(ref_sample[0], ref_sample[0]), xtick_subs.get(ref_sample[1], ref_sample[1])))
         sample_order = [ref_sample] + [sample for sample in sample_order if sample != ref_sample]
-    hue_order = genes  # enforce order of genes
     sns.barplot(ax=ax, data=mRNA_expr_df, x='condition', y='expression', hue='gene', order=sample_order,
-                hue_order=hue_order, estimator='mean', errorbar='se', capsize=0.1, palette='bright')
+                hue_order=genes, estimator='mean', errorbar='se', capsize=0.1, palette='bright')
     ax.legend(title=None)
     # shrink bar widths to create real gaps between bars
     shrink_factor = 0.75  # 0.75 of original width; tweak as needed
@@ -387,7 +408,7 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     markers = Line2D.filled_markers[1:mRNA_expr_df['techRep'].nunique() + 1]
     for rep, marker in enumerate(markers):
         subset = mRNA_expr_df[mRNA_expr_df['techRep'] == rep]
-        sns.stripplot(data=subset, x='condition', y='expression', hue='gene', order=sample_order, hue_order=hue_order,
+        sns.stripplot(data=subset, x='condition', y='expression', hue='gene', order=sample_order, hue_order=genes,
                       dodge=True, jitter=True, marker=marker, size=10, linewidth=1, edgecolor='k', alpha=1,
                       palette='muted', ax=ax)
 
@@ -409,17 +430,19 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
 
     # Add statannotations *after* tweaking bar widths
     pairs = [] # define comparison pairs (compare conditions within each gene)
+    # (('Bone (TC)', 'Gli2'), ('Bone (AC)', 'Gli2'))
     for gene in mRNA_expr_df['gene'].unique():
         df_gene = mRNA_expr_df[mRNA_expr_df['gene'] == gene]
         pairs.extend(list(combinations(
             list(set(zip(df_gene['condition'].tolist(), df_gene['gene'].tolist()))), 2))
         )
-    # (('Bone (TC)', 'Gli2'), ('Bone (AC)', 'Gli2'))
+    pairs = sorted([tuple(sorted(p)) for p in pairs])  # sort pairs in a deterministic order
+
     annotator = Annotator(ax, pairs, data=mRNA_expr_df, x='condition', y='expression', hue='gene',
-                          order=sample_order, hue_order=hue_order)
+                          order=sample_order, hue_order=genes)
     alpha = 0.05  # p-value significance level
-    annotator.configure(test='t-test_ind', text_format='star', comparisons_correction='bonferroni',
-                        loc='inside', text_offset=0, line_height=0.04, verbose=1, hide_non_significant=True,
+    annotator.configure(test='t-test_ind', text_format='star', comparisons_correction='bonferroni', loc='inside',
+                        text_offset=0, line_height=0.04, line_width=2, verbose=1, hide_non_significant=True,
                         alpha=alpha,  # Only show brackets for p ≤ alpha
                         pvalue_thresholds=[
                             (alpha / 1000, r"${\ast}{\ast}{\ast}{\ast}$"),
@@ -427,7 +450,17 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
                             (alpha / 10, r"${\ast}{\ast}$"),
                             (alpha, r"$\ast$"),
                             (1, "ns")])
-    annotator.apply_and_annotate()
+    # color the brackets and stars the same colors as the bars
+    annotator.apply_test()  # gives list of Annotation objects
+    colors = sns.color_palette('bright')
+    colors = [colors[genes.index(pair[0][1])] for pair in pairs]
+    pair_color_dict = dict(zip(pairs, colors))
+    for ann in annotator.annotations:
+        pair = tuple(sorted([ann.structs[0]['group'], ann.structs[1]['group']]))
+        ann.line_color = pair_color_dict[pair]  # New feature enabled with patch
+    annotator.annotate()
+
+    # increase fontsize for stars over brackets
     for text in ax.texts:
         if text.get_text() in \
                 {r"$\ast$", r"${\ast}{\ast}$", r"${\ast}{\ast}{\ast}$", r"${\ast}{\ast}{\ast}{\ast}$", "ns"}:
@@ -936,6 +969,38 @@ def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_s
 
 
 if __name__ == '__main__':
+
+    # ##################################
+    # TODO: code snippet for reading data from hemocytometer data file
+    # dirname = '/Users/leonardharris/Downloads'
+    # df = get_cell_counts_hemocytometer(dirname)
+    # print(df)
+    # seeded = [None] * 18
+    # seeded[0:3] = [50000] * 3
+    # seeded[3:6] = [100000] * 3
+    # seeded[6:9] = [175000] * 3
+    # seeded[9:12] = [250000] * 3
+    # seeded[12:15] = [350000] * 3
+    # seeded[15:18] = [400000] * 3
+    # seeded += seeded
+    #
+    # plt.figure(constrained_layout=True)
+    # plt.plot(seeded, df['NumCells'], 'o')
+    # plt.xlabel('Seeded number of cells')
+    # plt.ylabel('Observed number of cells')
+    # plt.ticklabel_format(style='sci', axis='both', scilimits=(0, 0))
+    #
+    # # plot diagonal dashed line
+    # lims = np.array([plt.gca().get_xlim(), plt.gca().get_ylim()])
+    # min_val = lims.min()
+    # max_val = lims.max()
+    # plt.plot([min_val, max_val], [min_val, max_val], 'k--')
+    # plt.xlim(min_val, max_val)
+    # plt.ylim(min_val, max_val)
+    #
+    # plt.show()
+    # quit()
+    # ##################################
 
     # basedir = '.'
     # dirnames = ['TEST']
