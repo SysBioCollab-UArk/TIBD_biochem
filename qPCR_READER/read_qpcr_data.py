@@ -415,9 +415,10 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     # Create legends
     # add a legend for gene targets
     handles, labels = ax.get_legend_handles_labels()
-    gene_leg = ax.legend(handles[:3], labels[:3], ncols=3, loc='center', bbox_to_anchor=(0.5, -0.12),
+    gene_leg = ax.legend(handles[:3], labels[:3], ncols=3, loc='center',
                          columnspacing=1, handletextpad=0.5, frameon=False, fontsize=None)  # fs_legend)
     ax.add_artist(gene_leg)
+
     # add a second legend for tech rep symbols
     techRep_handles = [
         mlines.Line2D([], [], color='black', marker=marker, linestyle='None', markersize=8,
@@ -425,8 +426,7 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
         for rep, marker in enumerate(markers)
     ]
     techRep_leg = ax.legend(handles=techRep_handles, ncols=min(5, len(techRep_handles)), loc='center',
-                            bbox_to_anchor=(0.5, -0.18), columnspacing=1, handletextpad=0.1,
-                            frameon=False, fontsize=None)  # fs_legend)
+                            columnspacing=1, handletextpad=0.1, frameon=False, fontsize=None)  # fs_legend)
 
     # Add statannotations *after* tweaking bar widths
     pairs = [] # define comparison pairs (compare conditions within each gene)
@@ -475,8 +475,7 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
             for thresh, label in annotator.pvalue_thresholds[:-1]  # skip 'ns' if desired
         ]
         sig_leg = ax.legend(handles=sig_legend_handles, ncols=len(annotator.pvalue_thresholds), loc='center',
-                            bbox_to_anchor=(0.5, -0.24), columnspacing=0, handletextpad=0,
-                            frameon=False, fontsize=None)  # fs_legend)
+                            columnspacing=0, handletextpad=0, frameon=False, fontsize=None)  # fs_legend)
 
     # Finish up plot
     ax.set_xlabel(None)
@@ -490,7 +489,7 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     sns.despine()
 
 
-    def add_legend_to_fig(legend):
+    def add_legend_to_fig(legend, offset):
         handles = legend.legend_handles
         labels = [text.get_text() for text in legend.get_texts()]
         ax.figure.legend(handles, labels, ncols=legend._ncols, loc='center', columnspacing=legend.columnspacing,
@@ -504,18 +503,20 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     offset = 0.02 + 0.03 * (max(len(legends), len(fig_legends)) - 1)  # 0.08
     # adjust figure area to make space for the figure legend
     bottom = offset + 0.02  # 0.1
-    ax.figure.get_layout_engine().set(
-        rect=(0, bottom, 1, 1 - bottom))  # (left, bottom, width, height)
+    ax.figure.get_layout_engine().set(rect=(0, bottom, 1, 1 - bottom))  # (left, bottom, width, height)
     # loop over local legends
     for i, legend in enumerate(legends):
         # legends that already exist in the figure
         if i < len(fig_legends):
             # if there are more elements in the local legend than the figure legend, add the local legend to the figure
             if len(legend.legend_handles) > len(fig_legends[i].legend_handles):
-                add_legend_to_fig(legend)
+                add_legend_to_fig(legend, offset)
+            elif len(legends) > len(fig_legends):  # this means we need to shift previous legends up
+                add_legend_to_fig(fig_legends[i], offset)  # re-add previous legend with a new offset
+                fig_legends[i].remove()  # delete the old legend
         # new legends to add to the figure
         else:
-            add_legend_to_fig(legend)
+            add_legend_to_fig(legend, offset)
         offset -= 0.03
         # delete local legend
         legend.remove()
@@ -841,6 +842,7 @@ def get_rna_soln_and_cell_volumes(dirname):
 
     # === Get mRNA yields ===
     rna_df = pd.read_excel(os.path.join(dirname, 'rna_extraction.xlsx'), header=0)
+    rna_df["Sample"] = rna_df["Sample"].astype(str)
     # solution volume
     vol_column = [col for col in rna_df.columns if 'Soln_Vol' in col][0]
     vol_units = vol_column.replace('Soln_Vol', '').replace('(', '').replace(')', '').strip()
@@ -851,19 +853,27 @@ def get_rna_soln_and_cell_volumes(dirname):
                         "following values were read:", rna_df[vol_column].dropna().unique())
     rna_df = pd.DataFrame({'Sample': rna_df['Sample'].tolist(),
                            'Soln_Vol': [rna_vol] * len(rna_df),
-                           'Soln_Vol_Units:': [vol_units] * len(rna_df)})
-    '''print(rna_df.columns)
-    print('RNA extraction fluid:\n', rna_df)'''
+                           'Soln_Vol_Units': [vol_units] * len(rna_df)})
+    rna_df = strip_whitespace_from_df(rna_df)
+    # print('rna_df:', rna_df.columns)
+    # print('RNA extraction fluid:\n', rna_df)
 
     # === Get cell counts ===
     counts_df = get_cell_counts(dirname)
+    counts_df["Sample"] = counts_df["Sample"].astype(str)
+    counts_df = strip_whitespace_from_df(counts_df)
+    # print('counts_df:', counts_df.columns)
 
     # === Get cell volumes ===
     cell_vols_df = pd.read_excel(os.path.join(dirname, 'cell_vols.xlsx'))
+    cell_vols_df = strip_whitespace_from_df(cell_vols_df)
+    # print('cell_vols_df:', cell_vols_df.columns)
 
     # === Read in sample info ===
     samples_df = pd.read_excel(os.path.join(dirname, 'cell_culture_samples.xlsx'), header=0)
+    samples_df["Sample"] = samples_df["Sample"].astype(str)
     samples_df = strip_whitespace_from_df(samples_df)
+    # print('samples_df:', samples_df.columns)
 
     # === Merge dataframes ===
     merged_df = rna_df.merge(counts_df, on='Sample', how='outer').rename(columns={vol_column: 'RNA_' + vol_column})
@@ -889,7 +899,7 @@ def calc_absolute_mRNA(dirname, Cq_data, ref_gene, Cq_ref_gene, std_curve, ref_s
         for key2 in Cq_data[key].keys():
             '''print('  ', key2)'''
             # get volume of RNA extraction fluid, number of cells in the sample, and estimated cell volume
-            soln_vol, num_cells, cell_vol = rna_and_cell_vols_df.loc[int(key2), ['Soln_Vol', 'NumCells', 'CellVolume']]
+            soln_vol, num_cells, cell_vol = rna_and_cell_vols_df.loc[key2, ['Soln_Vol', 'NumCells', 'CellVolume']]
             sv_DIV_nc_DIV_cv = np.inf if num_cells == 0 else soln_vol / num_cells / cell_vol
             abs_mRNA_all[key][key2] = {}
             # loop over genes, with the ctrl_gene first
@@ -1006,7 +1016,7 @@ if __name__ == '__main__':
     # dirnames = ['TEST']
     # fig_prefix =  'TEST_qPCR'
 
-    basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/MAY_AUG_2025'
+    basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/EXPERIMENTS/2025_MAY_AUG'
     dirnames = ['BioRep2', 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD']
     fig_prefix = 'TIBD_qPCR'
 
