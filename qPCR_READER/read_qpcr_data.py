@@ -492,7 +492,7 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     def add_legend_to_fig(legend, offset):
         handles = legend.legend_handles
         labels = [text.get_text() for text in legend.get_texts()]
-        ax.figure.legend(handles, labels, ncols=legend._ncols, loc='center', columnspacing=legend.columnspacing,
+        ax.figure.legend(handles, labels, ncols=legend._ncols, loc='upper center', columnspacing=legend.columnspacing,
                          handletextpad=legend.handletextpad, frameon=False, fontsize=fs_legend,
                          bbox_to_anchor=(0.5, offset))
 
@@ -500,26 +500,49 @@ def plot_mRNA_expression(ax, mRNA_expr_dict, genes, ref_sample=None, **kwargs):
     # Put the legend at the bottom of the figure
     legends = [child for child in ax.get_children() if isinstance(child, matplotlib.legend.Legend)]
     fig_legends = [child for child in ax.figure.get_children() if isinstance(child, matplotlib.legend.Legend)]
-    offset = 0.02 + 0.03 * (max(len(legends), len(fig_legends)) - 1)  # 0.08
-    # adjust figure area to make space for the figure legend
-    bottom = offset + 0.02  # 0.1
-    ax.figure.get_layout_engine().set(rect=(0, bottom, 1, 1 - bottom))  # (left, bottom, width, height)
-    # loop over local legends
-    for i, legend in enumerate(legends):
-        # legends that already exist in the figure
-        if i < len(fig_legends):
-            # if there are more elements in the local legend than the figure legend, add the local legend to the figure
-            if len(legend.legend_handles) > len(fig_legends[i].legend_handles):
-                add_legend_to_fig(legend, offset)
-            elif len(legends) > len(fig_legends):  # this means we need to shift previous legends up
-                add_legend_to_fig(fig_legends[i], offset)  # re-add previous legend with a new offset
-                fig_legends[i].remove()  # delete the old legend
-        # new legends to add to the figure
+
+    # determine the offset for the legend
+    offset = 0
+    for i in range(max(len(legends), len(fig_legends))):
+        if i >= len(fig_legends):
+            leg = legends[i]
+        elif i >= len(legends):
+            leg = fig_legends[i]
+        elif len(legends[i].legend_handles) > len(fig_legends[i].legend_handles):
+            leg = legends[i]
         else:
-            add_legend_to_fig(legend, offset)
-        offset -= 0.03
-        # delete local legend
-        legend.remove()
+            leg = fig_legends[i]
+        nrows = math.ceil(len(leg.legend_handles) / leg._ncols)  # number of rows in the legend
+        offset += 0.06 * nrows
+    offset += 0.03
+
+    # adjust the figure height based on the height of the legend and the number of rows in the figure
+    leg_height = offset * 4.8  # inches
+    fig_nrows = len(sorted(set(ax.get_position().y0 for ax in ax.figure.axes)))
+    fig_height = 4.8 * fig_nrows + leg_height
+    ax.figure.set_figheight(fig_height)
+
+    # adjust figure area to make space for the figure legend
+    bottom = leg_height / fig_height
+    ax.figure.get_layout_engine().set(rect=(0, bottom, 1, 1 - bottom))  # (left, bottom, width, height)
+
+    # create the full figure legend
+    offset = bottom
+    for i in range(max(len(legends), len(fig_legends))):
+        if i >= len(fig_legends):
+            leg = legends[i]
+        elif i >= len(legends):
+            leg = fig_legends[i]
+        elif len(legends[i].legend_handles) > len(fig_legends[i].legend_handles):
+            leg = legends[i]
+            fig_legends[i].remove()
+        else:
+            leg = fig_legends[i]
+            legends[i].remove()
+        add_legend_to_fig(leg, offset)  # add the legend to the figure
+        nrows = math.ceil(len(leg.legend_handles) / leg._ncols)  # number of rows in the legend
+        leg.remove()  # delete the old legend
+        offset -= 0.06 * 4.8 / fig_height * nrows  # adjust the offset
 
 
 def find_and_remove_outliers(data_dict, key, key2, remove_dict=None, pop=True, alpha=0.05):
@@ -1017,7 +1040,8 @@ if __name__ == '__main__':
     # fig_prefix =  'TEST_qPCR'
 
     basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/EXPERIMENTS/2025_MAY_AUG'
-    dirnames = ['BioRep2', 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD']
+    # '2025_MAY_AUG' '2026_APRIL'
+    dirnames = ['BioRep1'] #, 'BioRep2', 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD', 'BioRep2', 'BioRep3']
     fig_prefix = 'TIBD_qPCR'
 
     mRNA_kwargs = {'fontsizes': {'title': 18, 'axis_labels': 16, 'axis_ticks': 16, 'legend': 14}, 'sharey': True}
