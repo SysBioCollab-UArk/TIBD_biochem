@@ -156,14 +156,18 @@ def display_platemap(pmap):
 
 
 def get_filepath_ignore_spaces(dirpath, prefix, suffix):
-    files = os.listdir(dirpath)
-    pattern = re.compile(rf"^{re.escape(prefix)}\s*-\s*{re.escape(suffix)}$")
-    matching_files = [f for f in files if pattern.match(f)]
-    if len(matching_files) == 1:
-        file_path = os.path.join(dirpath, matching_files[0])
-        return file_path
+    def _normalize(s):
+        return re.sub(r'\s+', ' ', s).strip()
+
+    target = _normalize(f"{prefix} - {suffix}")
+    matches = []
+    for f in os.listdir(dirpath):
+        if _normalize(f) == target:
+            matches.append(f)
+    if len(matches) == 1:
+        return os.path.join(dirpath, matches[0])
     else:
-        raise FileNotFoundError(f"Expected one match, found {len(matching_files)}: {matching_files}")
+        raise FileNotFoundError(f"Expected one match, found {len(matches)}: {matches}")
 
 
 def read_platemap_info(dirname):
@@ -1039,9 +1043,9 @@ if __name__ == '__main__':
     # dirnames = ['TEST']
     # fig_prefix =  'TEST_qPCR'
 
-    basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/EXPERIMENTS/2025_MAY_AUG'
+    basedir = '/Users/leonardharris/Library/CloudStorage/Box-Box/UArk Sys Bio Collab/Projects/TIBD/qPCR/EXPERIMENTS/2026_APRIL'
     # '2025_MAY_AUG' '2026_APRIL'
-    dirnames = ['BioRep1'] #, 'BioRep2', 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD', 'BioRep2', 'BioRep3']
+    dirnames = ['BioRep1', 'BioRep2']  #, 'BioRep3']  #, 'BioRep1', 'BioRep1_OLD', 'BioRep2', 'BioRep3']
     fig_prefix = 'TIBD_qPCR'
 
     mRNA_kwargs = {'fontsizes': {'title': 18, 'axis_labels': 16, 'axis_ticks': 16, 'legend': 14}, 'sharey': True}
@@ -1162,7 +1166,7 @@ if __name__ == '__main__':
             '''
 
             # Calculate absolute mRNA levels
-            print('\nCalculating absolute mRNA expression levels')
+            '''print('\nCalculating absolute mRNA expression levels')
             Cq_data_subset = dict((key, Cq_data_abs[key]) for key in Cq_data_abs if key[0] in group[0] and
                                   key[1] in group[1])
             abs_mRNA, fig_abs_mRNA = \
@@ -1173,7 +1177,7 @@ if __name__ == '__main__':
                     # add_subplot(figure, which_figure = (row, col, idx), sharey = True | False)
                     plot_title = plot_title, ylabel = 'absolute mRNA (%s)' % std_curve['conc_units'],
                     **mRNA_kwargs
-                )
+                )'''
             '''
             # print absolute mRNA values to the screen
             for key in abs_mRNA.keys():
